@@ -39,7 +39,12 @@ describe("StackReconciler.update — up-to-date result", () => {
   it("returns upToDate:true and records a zero-work deployment when nothing to pull", async () => {
     const createDeployment = vi.fn().mockResolvedValue({});
     const prisma = {
-      stackDeployment: { create: createDeployment },
+      stackDeployment: {
+        create: createDeployment,
+        // Snapshot retention runs after the deployment row is written.
+        findMany: vi.fn().mockResolvedValue([]),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
     } as unknown as PrismaClient;
     const dockerExecutor = {} as unknown as DockerExecutorService;
 

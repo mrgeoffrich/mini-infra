@@ -4,16 +4,11 @@ import { yaml as yamlLang } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { IconAlertCircle, IconInfoCircle, IconLoader2 } from "@tabler/icons-react";
+import { IconAlertCircle, IconLoader2 } from "@tabler/icons-react";
 import type {
   DraftVersionInput,
   StackTemplateVersionInfo,
 } from "@mini-infra/types";
-import {
-  buildDraftFromVersion,
-  mergeCodeViewDraft,
-  versionHasUnrepresentedSections,
-} from "@/lib/application-draft";
 import {
   parseYamlToDraft,
   serializeVersionToYaml,
@@ -66,14 +61,6 @@ export function CodeView({ version, readOnly, saving, onSave }: CodeViewProps) {
     typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-color-scheme: dark)").matches;
 
-  // The YAML codec can't represent Vault/NATS/inputs/prerequisites or the
-  // per-service binding fields, so warn (not block) when the version carries
-  // any of those — they're merged back on save rather than dropped.
-  const hasHiddenSections = useMemo(
-    () => (version ? versionHasUnrepresentedSections(version) : false),
-    [version],
-  );
-
   async function handleSave() {
     const parsed = parseYamlToDraft(buffer);
     if (!parsed.ok) {
@@ -83,13 +70,11 @@ export function CodeView({ version, readOnly, saving, onSave }: CodeViewProps) {
     }
     setParseError(null);
     setParseErrorLine(undefined);
-    // Merge the YAML edit over the lossless mapping of the current version so
-    // sections the codec can't represent (inputs/vault/nats/requires + the
-    // per-service binding fields) are preserved instead of silently stripped.
-    const merged = version
-      ? mergeCodeViewDraft(buildDraftFromVersion(version), parsed.value)
-      : parsed.value;
-    await onSave(merged);
+    // The YAML is the whole document — the codec is lossless, so what's in the
+    // buffer IS the draft. It used to be merged over the current version to
+    // restore sections the codec dropped, which also meant a section you deleted
+    // here came straight back.
+    await onSave(parsed.value);
   }
 
   function handleReset() {
@@ -100,16 +85,6 @@ export function CodeView({ version, readOnly, saving, onSave }: CodeViewProps) {
 
   return (
     <div className="flex h-full flex-col gap-3">
-      {hasHiddenSections && (
-        <Alert>
-          <IconInfoCircle className="h-4 w-4" />
-          <AlertDescription>
-            This template has Vault, NATS, inputs, prerequisites, or per-service
-            add-on/pool bindings that aren&apos;t shown in this YAML view. They
-            are preserved on save — edit them from the graphical editor.
-          </AlertDescription>
-        </Alert>
-      )}
 
       {parseError && (
         <Alert variant="destructive">

@@ -13,6 +13,7 @@ import type { ConnectivityStatusInfo } from "./settings";
 import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
 import type { ServiceApplyResult, ResourceResult, ApplyResult, DestroyResult, StackStopResult, StackStatus } from "./stacks";
+import type { DeploymentPhaseEvent } from "./deployments";
 import type { CertIssuanceStep, CertIssuanceResult } from "./tls";
 import type { OperationStep } from "./operations";
 import type {
@@ -209,6 +210,10 @@ export const ServerEvent = {
   // Stack Addon provisioning (Phase 1: defined; emitted from Phase 3 onward)
   STACK_ADDON_PROVISIONED: "stack:addon:provisioned",
   STACK_ADDON_FAILED: "stack:addon:failed",
+  // Blue-green deploy phase for one StatelessWeb service. Rides the STACKS
+  // channel and is keyed on stackId, so it lands on the apply the client already
+  // has open rather than needing a task of its own.
+  STACK_DEPLOYMENT_PHASE: "stack:deployment:phase",
   // HAProxy
   HAPROXY_BACKENDS_LIST: "haproxy:backends:list",
   HAPROXY_FRONTENDS_LIST: "haproxy:frontends:list",
@@ -413,6 +418,14 @@ export interface ServerToClientEvents {
     kind?: string;
     error: string;
   }) => void;
+
+  /**
+   * A StatelessWeb service's blue-green deploy moved to a new phase. Emitted for
+   * every transition of the deployment state machine, which previously only
+   * logged — so a multi-minute zero-downtime deploy showed the user nothing but
+   * a spinner.
+   */
+  "stack:deployment:phase": (data: DeploymentPhaseEvent) => void;
 
   // ── HAProxy ────────────────────────────────────────
   /** HAProxy backends list updated */

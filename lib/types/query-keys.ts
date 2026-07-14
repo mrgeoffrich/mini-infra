@@ -450,6 +450,8 @@ export const queryKeys = {
     versions: (templateId: string) => ["stackTemplateVersions", templateId] as const,
     prerequisites: (templateId: string, environmentId?: string | null) =>
       ["templatePrerequisites", templateId, environmentId ?? null] as const,
+    /** The server's predicate registry — global, not per-template. */
+    predicates: () => ["templatePredicates"] as const,
   },
 
   applications: {

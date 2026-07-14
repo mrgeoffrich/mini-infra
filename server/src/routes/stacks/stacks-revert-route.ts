@@ -1,17 +1,15 @@
 import { Router } from 'express';
-import { Prisma } from '../../generated/prisma/client';
 import prisma from '../../lib/prisma';
 import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';
 import { stackOperationLock } from '../../services/stacks/operation-lock';
+import { serializeStack, assertStackFound } from '../../services/stacks/utils';
 import {
-  serializeStack,
-  assertStackFound,
-  toServiceCreateInput,
-} from '../../services/stacks/utils';
+  restoreStackFromSnapshot,
+  isUsableSnapshot,
+} from '../../services/stacks/stack-restore-service';
 import { emitStackStatusChanged } from '../../services/stacks/stack-socket-emitter';
 import { ErrorCode, Permission } from '@mini-infra/types';
-import type { StackDefinition } from '@mini-infra/types';
 import { ConflictError, ValidationError } from '../../lib/errors';
 
 const router = Router();
@@ -40,8 +38,8 @@ router.post(
       stackId,
     );
 
-    const snapshot = stack.lastAppliedSnapshot as unknown as StackDefinition | null;
-    if (!snapshot || !Array.isArray(snapshot.services)) {
+    const snapshot = stack.lastAppliedSnapshot;
+    if (!isUsableSnapshot(snapshot)) {
       throw new ValidationError(
         ErrorCode.STACK_NO_APPLIED_SNAPSHOT,
         'This stack has never been applied, so there are no changes to discard.',
@@ -65,36 +63,11 @@ router.post(
     stackOperationLock.tryAcquire(stackId);
 
     try {
-      await prisma.$transaction(async (tx) => {
-        await tx.stackService.deleteMany({ where: { stackId } });
-        await tx.stack.update({
-          where: { id: stackId },
-          data: {
-            status: 'synced',
-            // Rewind the revision counter so installed-vs-latest reads honest
-            // (the restored definition equals what last reached containers).
-            ...(stack.lastAppliedVersion !== null ? { version: stack.lastAppliedVersion } : {}),
-            name: snapshot.name,
-            description: snapshot.description ?? null,
-            parameters: (snapshot.parameters ?? []) as unknown as Prisma.InputJsonValue,
-            resourceOutputs: (snapshot.resourceOutputs ?? []) as unknown as Prisma.InputJsonValue,
-            resourceInputs: (snapshot.resourceInputs ?? []) as unknown as Prisma.InputJsonValue,
-            networks: (snapshot.networks ?? []) as unknown as Prisma.InputJsonValue,
-            volumes: (snapshot.volumes ?? []) as unknown as Prisma.InputJsonValue,
-            tlsCertificates: (snapshot.tlsCertificates ?? []) as unknown as Prisma.InputJsonValue,
-            dnsRecords: (snapshot.dnsRecords ?? []) as unknown as Prisma.InputJsonValue,
-            tunnelIngress: (snapshot.tunnelIngress ?? []) as unknown as Prisma.InputJsonValue,
-            services: {
-              // The applied snapshot holds the RENDERED service list, which
-              // includes synthetic addon sidecars. Only authored services may
-              // be restored as StackService rows — restoring synthetics would
-              // duplicate the sidecars when the next apply re-expands addons.
-              create: snapshot.services
-                .filter((s) => !s.synthetic)
-                .map(toServiceCreateInput),
-            },
-          },
-        });
+      await restoreStackFromSnapshot(prisma, stackId, snapshot, {
+        // The restored definition IS what last reached containers, so `synced`
+        // is the truth and the revision counter rewinds to match.
+        status: 'synced',
+        rewindToVersion: stack.lastAppliedVersion,
       });
     } finally {
       stackOperationLock.release(stackId);

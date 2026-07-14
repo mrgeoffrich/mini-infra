@@ -3,6 +3,7 @@
 // ====================
 
 import type {
+  TemplateVersionRelation,
   StackParameterDefinition,
   StackParameterValue,
   StackNetwork,
@@ -118,6 +119,8 @@ export interface StackTemplateLinkedStack {
   templateCurrentVersion: number | null;
   /** True when the template's current published version is newer than the stack's. */
   templateUpdateAvailable: boolean;
+  /** How the installed version relates to the current one, with direction. */
+  templateVersionRelation: TemplateVersionRelation;
 }
 
 export interface StackTemplateInfo {

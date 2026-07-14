@@ -2,14 +2,28 @@ import * as yaml from "js-yaml";
 import type {
   DraftVersionInput,
   StackTemplateVersionInfo,
-  StackServiceDefinition,
   StackTemplateConfigFileInput,
 } from "@mini-infra/types";
+import { mapServiceInfoToDefinition } from "@/lib/application-draft";
 
 /**
  * The YAML view of a template version. Field order matches how the graphical
  * editor presents sections, so a round-trip feels stable. Empty collections
  * are omitted on output (via dropEmpty) and tolerated on input.
+ *
+ * This codec is LOSSLESS: every section of a template version appears in the
+ * YAML and survives a parse. It did not used to be. It hand-built a 10-key
+ * object and a 10-field service, silently dropping the top-level
+ * `inputs`/`vault`/`nats`/`requires` and every per-service binding
+ * (`addons`, `poolConfig`, `jobPoolConfig`, `natsRole`, `natsSigner`, the
+ * vault/nats credential refs). Saving from the Code view would have wiped all of
+ * them, so a merge-shim re-attached them from the current version afterwards —
+ * which meant the Code view could show you a template, let you edit it, and
+ * still not be the template.
+ *
+ * Making the codec complete is what lets the Code view actually BE the editor:
+ * what you see is the whole template, and what you save is what you see —
+ * including deletions, which a re-attaching merge could never express.
  */
 
 function dropEmpty<T>(value: T): T | undefined {
@@ -23,18 +37,10 @@ function dropEmpty<T>(value: T): T | undefined {
 }
 
 function versionInfoToDraftInput(v: StackTemplateVersionInfo): DraftVersionInput {
-  const services: StackServiceDefinition[] = (v.services ?? []).map((s) => ({
-    serviceName: s.serviceName,
-    serviceType: s.serviceType,
-    dockerImage: s.dockerImage,
-    dockerTag: s.dockerTag,
-    containerConfig: s.containerConfig,
-    initCommands: s.initCommands ?? undefined,
-    dependsOn: s.dependsOn,
-    order: s.order,
-    routing: s.routing ?? undefined,
-    adoptedContainer: s.adoptedContainer ?? undefined,
-  }));
+  // The canonical service mapper — the same one buildDraftFromVersion uses. The
+  // hand-rolled copy this replaces is precisely how the per-service bindings got
+  // dropped in the first place.
+  const services = (v.services ?? []).map(mapServiceInfoToDefinition);
 
   const configFiles: StackTemplateConfigFileInput[] | undefined =
     v.configFiles && v.configFiles.length > 0
@@ -60,6 +66,13 @@ function versionInfoToDraftInput(v: StackTemplateVersionInfo): DraftVersionInput
     services,
     configFiles,
     notes: v.notes ?? undefined,
+    inputs: dropEmpty(v.inputs ?? []),
+    requires: dropEmpty(v.requires ?? []),
+    // Passed through as-is, NOT null-stripped: the NATS schema uses `.nullable()`
+    // for the JetStream limits (`maxBytes`, `maxAgeSeconds`, …), where an explicit
+    // null is a meaningful value and not the same as an absent key.
+    vault: v.vault ?? undefined,
+    nats: v.nats ?? undefined,
   };
 }
 
@@ -73,7 +86,9 @@ export function serializeVersionToYaml(
   const draft: DraftVersionInput =
     "id" in input ? versionInfoToDraftInput(input) : input;
 
-  // Present keys in a meaningful order.
+  // Present keys in a meaningful order. Every key of DraftVersionInput must
+  // appear here — one missing entry silently drops that section on save, which
+  // is the exact bug this codec used to have.
   const ordered: Record<string, unknown> = {};
   if (draft.notes) ordered.notes = draft.notes;
   if (draft.parameters) ordered.parameters = draft.parameters;
@@ -81,12 +96,16 @@ export function serializeVersionToYaml(
     ordered.defaultParameterValues = draft.defaultParameterValues;
   if (draft.networkTypeDefaults)
     ordered.networkTypeDefaults = draft.networkTypeDefaults;
+  if (draft.inputs) ordered.inputs = draft.inputs;
+  if (draft.requires) ordered.requires = draft.requires;
   if (draft.resourceOutputs) ordered.resourceOutputs = draft.resourceOutputs;
   if (draft.resourceInputs) ordered.resourceInputs = draft.resourceInputs;
   ordered.networks = draft.networks ?? [];
   ordered.volumes = draft.volumes ?? [];
   ordered.services = draft.services ?? [];
   if (draft.configFiles) ordered.configFiles = draft.configFiles;
+  if (draft.vault) ordered.vault = draft.vault;
+  if (draft.nats) ordered.nats = draft.nats;
 
   return yaml.dump(ordered, {
     lineWidth: 120,

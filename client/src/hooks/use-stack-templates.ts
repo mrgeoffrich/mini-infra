@@ -68,6 +68,21 @@ async function rollbackTemplateVersion(args: {
   });
 }
 
+async function archiveTemplateVersion(args: {
+  templateId: string;
+  versionId: string;
+  archived: boolean;
+}): Promise<StackTemplateVersionInfo> {
+  return apiFetch<StackTemplateVersionInfo>(
+    ApiRoute.stackTemplates.archiveVersion(args.templateId, args.versionId),
+    {
+      method: "POST",
+      body: { archived: args.archived },
+      correlationIdPrefix: "stack-templates",
+    },
+  );
+}
+
 async function fetchStackTemplateVersions(
   templateId: string,
 ): Promise<StackTemplateVersionInfo[]> {
@@ -159,6 +174,25 @@ export function useStackTemplate(
     queryFn: () => fetchStackTemplate(templateId!, includeLinkedStacks),
     enabled: !!templateId,
     retry: 1,
+  });
+}
+
+/**
+ * The predicate names a template's `requires` block may reference. Fetched rather
+ * than hardcoded: the registry is server-side and code-only, and a client copy
+ * would drift the first time one is added.
+ */
+export function useTemplatePredicates() {
+  return useQuery({
+    queryKey: queryKeys.stackTemplates.predicates(),
+    queryFn: async () => {
+      const data = await apiFetch<{ predicates: string[] }>(
+        ApiRoute.stackTemplates.predicates(),
+        { correlationIdPrefix: "stack-templates" },
+      );
+      return data.predicates ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -328,8 +362,9 @@ export function useInstantiateTemplate() {
 
 /**
  * Re-point a template's current version to an older published version
- * (POST /:id/rollback). Stacks on a newer version stop showing the update
- * badge; stacks on an older version start showing it.
+ * (POST /:id/rollback). Stacks on an older version start showing the update
+ * badge. Stacks already on a NEWER version are left `ahead` of current and are
+ * moved with a targeted upgrade — see ChangeVersionDialog.
  */
 export function useRollbackTemplateVersion() {
   const queryClient = useQueryClient();
@@ -337,14 +372,37 @@ export function useRollbackTemplateVersion() {
   return useMutation({
     mutationFn: rollbackTemplateVersion,
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.stackTemplates.detail(variables.templateId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.stackTemplates.versions(variables.templateId),
-      });
-      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      invalidateTemplateVersions(queryClient, variables.templateId);
     },
   });
+}
+
+/**
+ * Archive (or restore) an old published version. An archived version stays
+ * readable but can no longer be instantiated, upgraded to, or made current.
+ */
+export function useArchiveTemplateVersion() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: archiveTemplateVersion,
+    onSuccess: (_data, variables) => {
+      invalidateTemplateVersions(queryClient, variables.templateId);
+    },
+  });
+}
+
+/** Both version mutations invalidate exactly the same set. */
+function invalidateTemplateVersions(
+  queryClient: ReturnType<typeof useQueryClient>,
+  templateId: string,
+) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
+  queryClient.invalidateQueries({
+    queryKey: queryKeys.stackTemplates.detail(templateId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: queryKeys.stackTemplates.versions(templateId),
+  });
+  queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
 }

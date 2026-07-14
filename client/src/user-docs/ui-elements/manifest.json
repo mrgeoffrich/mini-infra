@@ -24,6 +24,30 @@
           "file": "client/src/app/applications/[id]/_components/connected-networks-card.tsx"
         },
         {
+          "id": "application-environments-panel",
+          "label": "Application Environments Panel",
+          "elementType": "Card",
+          "file": "client/src/app/applications/[id]/_components/environments-panel.tsx"
+        },
+        {
+          "id": "stack-history-restore-button",
+          "label": "Stack History Restore Button",
+          "elementType": "Button",
+          "file": "client/src/app/applications/[id]/_components/history-section.tsx"
+        },
+        {
+          "id": "application-deploy-button",
+          "label": "Application Deploy Button",
+          "elementType": "Button",
+          "file": "client/src/app/applications/[id]/layout.tsx"
+        },
+        {
+          "id": "application-deploy-confirm",
+          "label": "Application Deploy Confirm",
+          "elementType": "Button",
+          "file": "client/src/app/applications/_components/deploy-to-environment-dialog.tsx"
+        },
+        {
           "id": "applications-add-button",
           "label": "Applications Add Button",
           "elementType": "Button",
@@ -458,6 +482,12 @@
           "file": "client/src/app/stacks/page.tsx"
         },
         {
+          "id": "stacks-create-button",
+          "label": "Stacks Create Button",
+          "elementType": "Button",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
           "id": "stacks-filters",
           "label": "Stacks Filters",
           "elementType": "div",
@@ -758,6 +788,18 @@
       "file": "client/src/components/stack-templates/template-version-diff.tsx"
     },
     {
+      "id": "stack-version-picker",
+      "label": "Stack Version Picker",
+      "elementType": "ul",
+      "file": "client/src/components/stacks/ChangeVersionDialog.tsx"
+    },
+    {
+      "id": "stack-deployment-phase",
+      "label": "Stack Deployment Phase",
+      "elementType": "div",
+      "file": "client/src/components/stacks/DeploymentPhaseTrail.tsx"
+    },
+    {
       "id": "rotate-inputs-dialog",
       "label": "Rotate Inputs Dialog",
       "elementType": "DialogContent",
@@ -800,6 +842,12 @@
       "file": "client/src/components/stacks/stack-indicators.tsx"
     },
     {
+      "id": "stack-ahead-of-current-badge",
+      "label": "Stack Ahead Of Current Badge",
+      "elementType": "Badge",
+      "file": "client/src/components/stacks/stack-indicators.tsx"
+    },
+    {
       "id": "stack-needs-attention-badge",
       "label": "Stack Needs Attention Badge",
       "elementType": "Badge",
@@ -808,6 +856,12 @@
     {
       "id": "stack-upgrade-button",
       "label": "Stack Upgrade Button",
+      "elementType": "Button",
+      "file": "client/src/components/stacks/stack-indicators.tsx"
+    },
+    {
+      "id": "stack-change-version-button",
+      "label": "Stack Change Version Button",
       "elementType": "Button",
       "file": "client/src/components/stacks/stack-indicators.tsx"
     },

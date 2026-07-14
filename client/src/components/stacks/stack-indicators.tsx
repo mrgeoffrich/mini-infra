@@ -3,6 +3,7 @@ import {
   IconAlertCircle,
   IconAlertTriangle,
   IconArrowUp,
+  IconHistory,
   IconLoader2,
 } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
@@ -14,14 +15,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useUpgradeAndApplyStack, fetchStackUpgradeInputs } from "@/hooks/use-stacks";
 import { getStackAttention } from "@/lib/stack-attention";
-import { RotateInputsDialog } from "@/components/stacks/RotateInputsDialog";
-import type {
-  StackAttentionLevel,
-  StackInfo,
-  TemplateInputDeclaration,
-} from "@mini-infra/types";
+import { useStackUpgradeFlow } from "@/hooks/use-stack-upgrade-flow";
+import { UpgradeRotateGate } from "@/components/stacks/UpgradeRotateGate";
+import { ChangeVersionDialog } from "@/components/stacks/ChangeVersionDialog";
+import type { StackAttentionLevel, StackInfo } from "@mini-infra/types";
 
 /**
  * "Update available" badge shown when a stack's template has a newer published
@@ -47,6 +45,52 @@ export function UpdateAvailableBadge({ className }: { className?: string }) {
         <TooltipContent className="max-w-xs">
           A newer version of this stack&apos;s template has been published. Upgrade
           &amp; deploy to adopt it.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * Shown when a stack sits on a template version NEWER than the template's
+ * current one — which is what a template rollback leaves behind, since rollback
+ * re-points `currentVersionId` without touching installed stacks.
+ *
+ * This state used to be invisible: `templateUpdateAvailable` is false (there is
+ * no newer version to adopt), so the stack rendered as though it were perfectly
+ * up to date while actually running a version the template owner had retracted.
+ * Say so, and point at the way out.
+ */
+export function StrandedAheadBadge({
+  stack,
+  className,
+}: {
+  stack: StackInfo;
+  className?: string;
+}) {
+  if (stack.templateVersionRelation !== "ahead") return null;
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-help border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
+              className,
+            )}
+            data-tour="stack-ahead-of-current-badge"
+          >
+            <IconHistory className="mr-1 h-3 w-3" />
+            Ahead of current
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          This stack runs template v{stack.templateVersion}, but the template&apos;s
+          current version is v{stack.templateCurrentVersion} — the template was
+          rolled back after this stack adopted v{stack.templateVersion}. Use Change
+          version to move it.
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -147,33 +191,7 @@ export function UpgradeButton({
   className?: string;
   children?: React.ReactNode;
 }) {
-  const upgrade = useUpgradeAndApplyStack();
-  // While we look up whether the target version requires rotateOnUpgrade inputs.
-  const [checking, setChecking] = useState(false);
-  // Non-null once we know the upgrade needs input values → opens the dialog.
-  const [rotateInputs, setRotateInputs] = useState<TemplateInputDeclaration[] | null>(null);
-
-  const busy = upgrade.isPending || checking;
-
-  async function handleClick() {
-    setChecking(true);
-    try {
-      const inputs = await fetchStackUpgradeInputs(stackId);
-      if (inputs.length > 0) {
-        // Collect the required values first, then upgrade with them.
-        setRotateInputs(inputs);
-        return;
-      }
-      upgrade.mutate({ stackId, label });
-    } catch {
-      // Couldn't pre-fetch the required inputs — fall back to a plain upgrade.
-      // If inputs are actually needed the server 400s with
-      // STACK_INPUT_ROTATION_REQUIRED, surfaced by the global error toast.
-      upgrade.mutate({ stackId, label });
-    } finally {
-      setChecking(false);
-    }
-  }
+  const flow = useStackUpgradeFlow({ stackId, label });
 
   return (
     <>
@@ -181,30 +199,67 @@ export function UpgradeButton({
         size={size}
         variant={variant}
         className={className}
-        disabled={disabled || busy}
-        onClick={handleClick}
+        disabled={disabled || flow.busy}
+        onClick={() => void flow.start()}
         data-tour="stack-upgrade-button"
       >
-        {busy ? (
+        {flow.busy ? (
           <IconLoader2 className="mr-1 h-4 w-4 animate-spin" />
         ) : (
           <IconArrowUp className="mr-1 h-4 w-4" />
         )}
         {children ?? "Upgrade & deploy"}
       </Button>
-      <RotateInputsDialog
-        open={rotateInputs !== null}
-        onOpenChange={(open) => {
-          if (!open) setRotateInputs(null);
-        }}
-        inputs={rotateInputs ?? []}
-        isSaving={upgrade.isPending}
-        onConfirm={(inputValues) => {
-          upgrade.mutate(
-            { stackId, label, inputValues },
-            { onSuccess: () => setRotateInputs(null) },
-          );
-        }}
+      <UpgradeRotateGate flow={flow} />
+    </>
+  );
+}
+
+/**
+ * "Change version" — opens the picker so a stack can be moved to any published
+ * template version, including an older one.
+ *
+ * Distinct from {@link UpgradeButton}, which always targets the current version:
+ * this is the affordance for a deliberate choice (downgrade after a bad release,
+ * or recovering a stack stranded ahead of current by a template rollback).
+ * Renders nothing for templateless stacks — there are no versions to choose.
+ */
+export function ChangeVersionButton({
+  stack,
+  label,
+  size = "sm",
+  variant = "outline",
+  disabled,
+  className,
+}: {
+  stack: StackInfo;
+  label: string;
+  size?: "sm" | "default" | "lg" | "icon";
+  variant?: "default" | "outline" | "secondary" | "ghost";
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!stack.templateId) return null;
+
+  return (
+    <>
+      <Button
+        size={size}
+        variant={variant}
+        className={className}
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        data-tour="stack-change-version-button"
+      >
+        <IconHistory className="mr-1 h-4 w-4" />
+        Change version
+      </Button>
+      <ChangeVersionDialog
+        stack={stack}
+        label={label}
+        open={open}
+        onOpenChange={setOpen}
       />
     </>
   );

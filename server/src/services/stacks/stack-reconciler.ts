@@ -35,6 +35,7 @@ import {
 } from './utils';
 import { runPostInstallActions } from './post-install-actions';
 import { buildAppliedSnapshot } from './stack-applied-snapshot';
+import { pruneDeploymentSnapshots } from './stack-restore-service';
 import { recordDeploymentFailure } from './stack-deployment-logger';
 import { emitStackStatusChanged } from './stack-socket-emitter';
 import { summariseServiceFailures } from './stack-failure-summary';
@@ -80,6 +81,25 @@ export class StackReconciler {
     this.serviceHandlers = new StackServiceHandlers(
       prisma, dockerExecutor, this.containerManager, this.infraManager, this.networkManager, routingManager
     );
+  }
+
+  /**
+   * Age old deployment snapshots out of retention.
+   *
+   * Deliberately non-fatal. This runs AFTER the deployment row is written, so a
+   * failure here means "we couldn't tidy up", not "the deploy failed" — and
+   * failing an otherwise-successful apply because a housekeeping query threw
+   * would be a spectacularly bad trade.
+   */
+  private async pruneSnapshotsQuietly(stackId: string): Promise<void> {
+    try {
+      await pruneDeploymentSnapshots(this.prisma, stackId);
+    } catch (error) {
+      getLogger('stacks', 'stack-reconciler').warn(
+        { error: error instanceof Error ? error.message : String(error), stackId },
+        'Pruning old deployment snapshots failed (non-fatal)',
+      );
+    }
   }
 
   /**
@@ -446,15 +466,19 @@ export class StackReconciler {
       // 8. Update stack in DB
       const allSucceeded = serviceResults.every((r) => r.success);
       const resultStatus = allSucceeded ? 'synced' : 'error';
+      // Snapshot the *authored* (pre-invariant) definitions: the injected
+      // `applications` join is derived at apply time and must not enter the
+      // definition hash, or drift detection would perpetually recreate.
+      // Built once and written to both the Stack (as "last applied") and the
+      // StackDeployment row below (as "what THIS deployment applied") — the same
+      // bytes, so a restore from history and a revert-pending cannot disagree.
+      const appliedSnapshot = buildAppliedSnapshot(stack, resolvedServiceDefinitions);
       await this.prisma.stack.update({
         where: { id: stackId },
         data: {
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          // Snapshot the *authored* (pre-invariant) definitions: the injected
-          // `applications` join is derived at apply time and must not enter the
-          // definition hash, or drift detection would perpetually recreate.
-          lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedServiceDefinitions),
+          lastAppliedSnapshot: appliedSnapshot,
           // The definition hashes we just stamped onto the containers as
           // `mini-infra.definition-hash` labels. The background status monitor
           // diffs a container's live label against this map to spot out-of-band
@@ -512,8 +536,10 @@ export class StackReconciler {
           serviceResults: serviceResults as unknown as Prisma.InputJsonValue,
           resourceResults: allResourceResults as unknown as Prisma.InputJsonValue,
           triggeredBy: options?.triggeredBy ?? null,
+          snapshot: appliedSnapshot,
         },
       });
+      await this.pruneSnapshotsQuietly(stackId);
 
       return {
         success: allSucceeded,
@@ -725,6 +751,9 @@ export class StackReconciler {
       const allSucceeded = serviceResults.every((r) => r.success);
       const resultStatus = allSucceeded ? 'synced' : 'error';
 
+      // Built once, written to both the Stack and the StackDeployment row — see
+      // the `apply` branch above.
+      const appliedSnapshot = buildAppliedSnapshot(stack, resolvedServiceDefinitions);
       await this.prisma.stack.update({
         where: { id: stackId },
         data: {
@@ -734,7 +763,7 @@ export class StackReconciler {
           // Snapshot the *authored* (pre-invariant) definitions: the injected
           // `applications` join is derived at apply time and must not enter the
           // definition hash, or drift detection would perpetually recreate.
-          lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedServiceDefinitions),
+          lastAppliedSnapshot: appliedSnapshot,
           // See the `apply` branch above — the stamped definition hashes the
           // background status monitor diffs live container labels against.
           lastAppliedHashes: Object.fromEntries(serviceHashes),
@@ -774,8 +803,10 @@ export class StackReconciler {
           duration: Date.now() - startTime,
           serviceResults: serviceResults as unknown as Prisma.InputJsonValue,
           triggeredBy: options?.triggeredBy ?? null,
+          snapshot: appliedSnapshot,
         },
       });
+      await this.pruneSnapshotsQuietly(stackId);
 
       return {
         success: allSucceeded,

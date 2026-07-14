@@ -34,7 +34,7 @@ import {
   validateTemplateSubstitutions,
 } from "./template-substitution-validator";
 import { encryptInputValues } from "./stack-input-values-service";
-import { ErrorCode } from "@mini-infra/types";
+import { ErrorCode, computeTemplateVersionRelation } from "@mini-infra/types";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors";
 
 // Input shape for upserting system templates from builtin definitions
@@ -716,9 +716,13 @@ export class StackTemplateService {
 
   /**
    * Re-point `currentVersionId` to an older *published* version (a rollback).
-   * Existing stacks on a newer version simply stop showing the update badge;
-   * stacks on an older version see it appear. Idempotent when the target is
-   * already current. System templates are immutable.
+   *
+   * This does not touch any installed stack. Stacks on an older version see the
+   * update badge appear; stacks already on a NEWER version are left `ahead` of
+   * current — they have no update to adopt, and are moved with an explicit
+   * targeted upgrade (`POST /stacks/:id/upgrade` with `targetVersionId`).
+   *
+   * Idempotent when the target is already current. System templates are immutable.
    */
   async rollbackToVersion(
     templateId: string,
@@ -763,6 +767,77 @@ export class StackTemplateService {
     }
 
     return this.assertTemplateFound(await this.getTemplate(templateId), templateId);
+  }
+
+  /**
+   * Retire an old published version: it stays readable in the sidebar's archived
+   * section but can no longer be instantiated, upgraded to, or made current.
+   *
+   * `StackTemplateVersionStatus.archived` existed in the enum from the start but
+   * nothing ever wrote it, so the sidebar's archived section was unreachable and
+   * the status was decorative. This is the write side.
+   *
+   * The current version cannot be archived — a template pointing at an archived
+   * version could not instantiate or upgrade anything, which is a wedged
+   * template, not a retired version. Roll the pointer elsewhere first.
+   */
+  async setVersionArchived(
+    templateId: string,
+    versionId: string,
+    archived: boolean,
+  ): Promise<StackTemplateVersionInfo> {
+    const template = this.assertTemplateFound(
+      await this.prisma.stackTemplate.findUnique({ where: { id: templateId } }),
+      templateId,
+    );
+    this.assertUserTemplate(template, "modify");
+
+    const version = await this.prisma.stackTemplateVersion.findUnique({
+      where: { id: versionId },
+    });
+    if (!version || version.templateId !== templateId) {
+      throw new NotFoundError(
+        ErrorCode.STACK_TEMPLATE_VERSION_NOT_FOUND,
+        "Template version not found",
+        {
+          resource: { type: "stackTemplateVersion", id: versionId },
+          action: "Pick a version that belongs to this template.",
+        },
+      );
+    }
+
+    // Drafts are discarded, not archived — archiving one would strand the
+    // template's in-progress edit in a state nothing can publish or discard.
+    if (version.status === "draft") {
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_VERSION_NOT_PUBLISHED,
+        "A draft cannot be archived",
+        {
+          resource: { type: "stackTemplateVersion", id: versionId },
+          action: "Publish the draft, or discard it if you don't want it.",
+        },
+      );
+    }
+
+    if (archived && template.currentVersionId === version.id) {
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_VERSION_IS_CURRENT,
+        `v${version.version} is the template's current version and cannot be archived`,
+        {
+          resource: { type: "stackTemplateVersion", id: versionId },
+          action:
+            "Make another published version current first, then archive this one.",
+        },
+      );
+    }
+
+    const updated = await this.prisma.stackTemplateVersion.update({
+      where: { id: versionId },
+      data: { status: archived ? "archived" : "published" },
+      include: { services: { orderBy: { order: "asc" } }, configFiles: true },
+    });
+
+    return this.serializeVersion(updated);
   }
 
   async discardDraft(templateId: string): Promise<void> {
@@ -1001,6 +1076,21 @@ export class StackTemplateService {
         {
           resource: { type: "stackTemplate", id: input.templateId, name: template.name },
           action: "Restore the template before creating a stack from it.",
+        },
+      );
+    }
+    // Defense in depth. `setVersionArchived` refuses to archive the current
+    // version, so this should be unreachable — but instantiate previously did no
+    // version-status check at all, and an unpublishable version silently
+    // materialising into a running stack is not a failure mode worth trusting an
+    // invariant elsewhere to prevent.
+    if (template.currentVersion.status !== "published") {
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_VERSION_NOT_PUBLISHED,
+        `The template's current version (v${template.currentVersion.version}) is ${template.currentVersion.status}, not published`,
+        {
+          resource: { type: "stackTemplate", id: input.templateId, name: template.name },
+          action: "Make a published version current before creating a stack from it.",
         },
       );
     }
@@ -1260,6 +1350,7 @@ export class StackTemplateService {
         linkedStacks: template.stacks.map((s) => {
           const stackVersion = s.templateVersion ?? null;
           const currentVersion = (template.currentVersion?.version as number | undefined) ?? null;
+          const relation = computeTemplateVersionRelation(stackVersion, currentVersion);
           return {
             id: s.id,
             name: s.name,
@@ -1270,10 +1361,8 @@ export class StackTemplateService {
             environmentId: s.environmentId,
             templateVersion: stackVersion,
             templateCurrentVersion: currentVersion,
-            // Mirror utils.computeTemplateUpdateAvailable: the template has a
-            // newer published version than the one this stack is pinned to.
-            templateUpdateAvailable:
-              stackVersion !== null && currentVersion !== null && currentVersion > stackVersion,
+            templateUpdateAvailable: relation === 'behind',
+            templateVersionRelation: relation,
           };
         }),
       } : {}),

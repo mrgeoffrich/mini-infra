@@ -1505,6 +1505,17 @@ model StackDeployment {
   triggeredBy     String?     // user ID for audit trail
   createdAt       DateTime    @default(now())
 
+  // The stack definition (StackDefinition) as applied by THIS deployment — the
+  // same value written to Stack.lastAppliedSnapshot, kept per-deployment so the
+  // history is a real timeline you can restore from, not just a "last applied"
+  // pointer. Null for `stop` deployments (nothing was applied) and for rows
+  // written before this column existed.
+  //
+  // Like lastAppliedSnapshot this holds the RENDERED service list, including
+  // synthetic addon sidecars — restore must filter them out (see
+  // restoreStackFromSnapshot).
+  snapshot        Json?
+
   @@index([stackId])
   @@index([createdAt])
   @@map("stack_deployments")

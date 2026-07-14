@@ -15,9 +15,11 @@ import type {
   FieldDiff,
   ApplyResult,
   DestroyResult,
+  DeploymentPhaseEvent,
   ServiceApplyResult,
   ResourceResult,
   ApplyStackRequest,
+  CreateStackRequest,
   StackListResponse,
   StackResponse,
   StackValidationError,
@@ -75,17 +77,29 @@ async function fetchStack(stackId: string): Promise<StackResponse> {
 }
 
 /**
- * The `rotateOnUpgrade` input declarations the operator must supply to upgrade
- * this stack to its template's current version. Empty when the template has no
- * such inputs — the caller can then upgrade without a dialog.
+ * The `rotateOnUpgrade` input declarations the operator must supply to move this
+ * stack to `targetVersionId` (or the template's current version when omitted).
+ * Empty when that version has no such inputs — the caller can then upgrade
+ * without a dialog.
+ *
+ * The target matters: inputs belong to the version being deployed, so asking
+ * the current version what a *different* version needs would prompt for the
+ * wrong secrets.
  */
 export async function fetchStackUpgradeInputs(
   stackId: string,
+  targetVersionId?: string,
 ): Promise<TemplateInputDeclaration[]> {
-  const data = await apiFetch<{ inputs: TemplateInputDeclaration[] }>(
-    ApiRoute.stacks.upgradeInputs(stackId),
-    { correlationIdPrefix: "stacks" },
-  );
+  // Query string is appended here rather than baked into the ApiRoute builder:
+  // ALL_API_ROUTES is a registry of paths, and a builder that emitted `?…` broke
+  // the route-drift check that matches builders against Express routes.
+  const path = ApiRoute.stacks.upgradeInputs(stackId);
+  const url = targetVersionId
+    ? `${path}?targetVersionId=${encodeURIComponent(targetVersionId)}`
+    : path;
+  const data = await apiFetch<{ inputs: TemplateInputDeclaration[] }>(url, {
+    correlationIdPrefix: "stacks",
+  });
   return data.inputs ?? [];
 }
 
@@ -132,14 +146,19 @@ async function applyStack(
 async function upgradeStack(
   stackId: string,
   inputValues?: Record<string, string>,
+  targetVersionId?: string,
 ): Promise<StackInfo> {
-  // POST /upgrade re-materializes the stack from its template's current
-  // published version. It does NOT apply — callers chain applyStack afterwards.
-  // No catch-and-flatten so the real ApiRequestError (e.g. rotation-required)
-  // reaches the global MutationCache.onError.
+  // POST /upgrade re-materializes the stack from a published version of its
+  // template — `targetVersionId` when given, else the current version. It does
+  // NOT apply — callers chain applyStack afterwards. No catch-and-flatten so the
+  // real ApiRequestError (e.g. rotation-required) reaches the global
+  // MutationCache.onError.
   return apiFetch<StackInfo>(ApiRoute.stacks.upgrade(stackId), {
     method: "POST",
-    body: inputValues ? { inputValues } : {},
+    body: {
+      ...(inputValues ? { inputValues } : {}),
+      ...(targetVersionId ? { targetVersionId } : {}),
+    },
     correlationIdPrefix: "stacks",
   });
 }
@@ -383,9 +402,64 @@ export function useRevertPendingStack() {
 }
 
 /**
+ * Create a templateless ("ad-hoc") stack — POST /api/stacks.
+ *
+ * The endpoint has existed since stacks did, but had zero client callers: such a
+ * stack could only be born via the API, yet showed up on the /stacks page like
+ * any other, which is a half-supported feature. This is the UI for it.
+ */
+export function useCreateStack() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreateStackRequest) =>
+      apiFetch<StackInfo>(ApiRoute.stacks.list(), {
+        method: "POST",
+        body: request,
+        correlationIdPrefix: "stacks",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
+ * Restore the stack's definition from what a past deployment applied —
+ * POST /stacks/:id/history/:deploymentId/restore.
+ *
+ * Definition only: nothing is deployed, so the stack lands `pending` and the
+ * operator applies when ready. Distinct from revert-pending, which restores the
+ * LAST applied state (an undo of unapplied edits); this goes back to an older
+ * deployment on purpose.
+ */
+export function useRestoreStackDeployment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stackId, deploymentId }: { stackId: string; deploymentId: string }) =>
+      apiFetch<StackInfo>(ApiRoute.stacks.historyRestore(stackId, deploymentId), {
+        method: "POST",
+        body: {},
+        correlationIdPrefix: "stacks",
+      }),
+    onSuccess: (_data, variables) => {
+      toast.success("Definition restored", {
+        description: "The stack is now Pending — Apply to deploy it.",
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.history(variables.stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
  * Raw upgrade mutation — POST /stacks/:id/upgrade. Re-materializes the stack
- * from its template's current version and flips it to `pending`. Does NOT
- * apply. Most call sites want {@link useUpgradeAndApplyStack} instead.
+ * from a published template version (`targetVersionId`, else current) and flips
+ * it to `pending`. Does NOT apply. Most call sites want
+ * {@link useUpgradeAndApplyStack} instead.
  */
 export function useStackUpgrade() {
   const queryClient = useQueryClient();
@@ -393,10 +467,12 @@ export function useStackUpgrade() {
     mutationFn: ({
       stackId,
       inputValues,
+      targetVersionId,
     }: {
       stackId: string;
       inputValues?: Record<string, string>;
-    }) => upgradeStack(stackId, inputValues),
+      targetVersionId?: string;
+    }) => upgradeStack(stackId, inputValues, targetVersionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
@@ -427,12 +503,14 @@ export function useUpgradeAndApplyStack() {
       stackId,
       label,
       inputValues,
+      targetVersionId,
     }: {
       stackId: string;
       label: string;
       inputValues?: Record<string, string>;
+      targetVersionId?: string;
     }) => {
-      await upgradeStack(stackId, inputValues);
+      await upgradeStack(stackId, inputValues, targetVersionId);
       registerTask({ id: stackId, type: "stack-apply", label, channel: Channel.STACKS });
       await applyStack(stackId, {});
     },
@@ -458,6 +536,12 @@ export interface StackApplyProgressState {
   actions: Array<{ serviceName: string; action: string }>;
   forcePull: boolean;
   finalResult: (ApplyResult & { error?: string; postApply?: { success: boolean; errors?: string[] } }) | null;
+  /**
+   * Current blue-green phase per StatelessWeb service, keyed by service name.
+   * Only these services run the deployment state machine — a Stateful service is
+   * a stop-and-recreate with no phases, and will never appear here.
+   */
+  phases: Record<string, DeploymentPhaseEvent>;
 }
 
 const INITIAL_APPLY_STATE: StackApplyProgressState = {
@@ -467,6 +551,7 @@ const INITIAL_APPLY_STATE: StackApplyProgressState = {
   actions: [],
   forcePull: false,
   finalResult: null,
+  phases: {},
 };
 
 /**
@@ -493,7 +578,22 @@ export function useStackApplyProgress(stackId: string) {
         actions: data.actions,
         forcePull: !!data.forcePull,
         finalResult: null,
+        phases: {},
       });
+    },
+    !!stackId,
+  );
+
+  // Blue-green deploy phase for one StatelessWeb service. These arrive between
+  // apply-started and that service's result — the long silence they fill.
+  useSocketEvent(
+    ServerEvent.STACK_DEPLOYMENT_PHASE,
+    (data) => {
+      if (data.stackId !== stackId) return;
+      setApplyState((prev) => ({
+        ...prev,
+        phases: { ...prev.phases, [data.serviceName]: data },
+      }));
     },
     !!stackId,
   );

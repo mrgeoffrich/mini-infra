@@ -271,6 +271,7 @@ export const StackPlanView = React.memo(function StackPlanView({
           completedResults={applyProgress.completedResults}
           totalActions={applyProgress.totalActions}
           forcePull={applyProgress.forcePull}
+          phases={applyProgress.phases}
           result={applyProgress.finalResult ?? undefined}
         />
         {applyProgress.finalResult && (

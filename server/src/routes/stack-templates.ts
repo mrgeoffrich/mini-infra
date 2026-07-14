@@ -8,6 +8,7 @@ import { requirePermission } from '../middleware/auth';
 import { NotFoundError, ValidationError, ForbiddenError } from '../lib/errors';
 import { StackTemplateService } from '../services/stacks/stack-template-service';
 import { evaluatePrerequisitesForTemplateVersion } from '../services/stacks/template-prerequisites';
+import { listPredicateNames } from '../services/stacks/template-prerequisites/predicates';
 import {
   createTemplateSchema,
   updateTemplateMetaSchema,
@@ -78,6 +79,18 @@ router.get('/', requirePermission(Permission.StacksRead), asyncHandler(async (re
   });
 
   res.json({ success: true, data: templates });
+}));
+
+// GET /predicates — The predicate names a template's `requires` block may use.
+// The registry is code-only and fixed at build time, so the authoring UI has to
+// be told what is in it; a hardcoded client copy would silently drift the first
+// time a predicate is added or renamed, and the only feedback would be a 400 on
+// save.
+//
+// MUST stay above `GET /:templateId` — Express matches in order, and below it
+// "predicates" would be parsed as a template id.
+router.get('/predicates', requirePermission(Permission.StacksRead), asyncHandler(async (_req, res) => {
+  res.json({ success: true, data: { predicates: listPredicateNames() } });
 }));
 
 // GET /:templateId — Get template with current version
@@ -292,6 +305,37 @@ router.post('/:templateId/rollback', requirePermission(Permission.StacksWrite), 
   );
   res.json({ success: true, data: template });
 }));
+
+// POST /:templateId/versions/:versionId/archive — Retire an old published
+// version so it can no longer be instantiated, upgraded to, or made current.
+// Body: { archived: boolean } — false un-archives. 404 if the version doesn't
+// belong to the template, 400 for a draft or for the template's current
+// version, 403 for system templates.
+router.post(
+  '/:templateId/versions/:versionId/archive',
+  requirePermission(Permission.StacksWrite),
+  asyncHandler(async (req, res) => {
+    const archived = req.body?.archived;
+    if (typeof archived !== 'boolean') {
+      throw new ValidationError(ErrorCode.VALIDATION_FAILED, 'archived must be a boolean', {
+        action: 'Pass { "archived": true } to archive, or false to restore.',
+      });
+    }
+
+    const service = getTemplateService();
+    const version = await service.setVersionArchived(
+      String(req.params.templateId),
+      String(req.params.versionId),
+      archived,
+    );
+
+    logger.info(
+      { templateId: req.params.templateId, versionId: req.params.versionId, archived },
+      archived ? 'Template version archived' : 'Template version restored',
+    );
+    res.json({ success: true, data: version });
+  }),
+);
 
 // DELETE /:templateId/draft — Discard draft
 router.delete('/:templateId/draft', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {

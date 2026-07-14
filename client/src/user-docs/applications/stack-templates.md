@@ -90,7 +90,9 @@ You can also diff any two versions from the detail page by selecting a version �
 
 Select an older published version in the sidebar and click **Make current**. That version becomes the template's current published version.
 
-Rollback does not touch any running stack. It changes what "current" means, so stacks running a *newer* version will now show as having an update available pointing *back* at the older one. To actually revert a stack, roll the template back and then **Upgrade & deploy** the stack.
+Rollback does not touch any running stack — it only changes what "current" means.
+
+A stack already running the newer version therefore stays on it, and is now *ahead* of the template's current version. It does not show **Update available** (there is nothing newer than what it runs) and **Upgrade & deploy** is refused. Instead it shows an **Ahead of current** badge, and you move it with **Change version** on the stack detail page, choosing the version you want. See [Stacks](/help/applications/host-stacks).
 
 ## Installing a template
 
@@ -108,6 +110,20 @@ Click **Install** on a template with a published version. The dialog collects:
 **Archive** hides a template from the default list without destroying it — the right move for a template you've stopped using but whose stacks may still exist. Unarchive from the same menu.
 
 **Delete** removes it permanently. Templates still in use by a stack can't be deleted — archive them instead.
+
+### Archiving a single version
+
+Old published versions can be archived individually from the version sidebar. An archived version stays readable but can no longer be installed, upgraded to, or made current — use it to retire a version you don't want anyone deploying while keeping it on the record. **Restore** puts it back.
+
+Two versions can't be archived: the template's **current** version (a template pointing at an archived version couldn't install or upgrade anything), and the **draft** (drafts are discarded, not archived).
+
+Stacks already running an archived version keep running. Archiving retires the version; it doesn't touch deployments.
+
+## The Code view
+
+The **Code** tab shows the whole template version as YAML, and it is the complete document — services, parameters, inputs, prerequisites, networks, volumes, config files, and the Vault and NATS sections. What you save is what you see, including deletions: remove a section in the editor and it is removed.
+
+Vault and NATS have no graphical editor. The Code view is where you author them.
 
 ## Template scopes
 

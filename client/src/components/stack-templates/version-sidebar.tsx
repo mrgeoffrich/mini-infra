@@ -2,7 +2,13 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { IconArrowBackUp, IconExternalLink, IconLoader2 } from "@tabler/icons-react";
+import {
+  IconArchive,
+  IconArchiveOff,
+  IconArrowBackUp,
+  IconExternalLink,
+  IconLoader2,
+} from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +22,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { StackStatusBadge } from "@/components/stacks/StackStatusBadge";
-import { useRollbackTemplateVersion } from "@/hooks/use-stack-templates";
+import {
+  useArchiveTemplateVersion,
+  useRollbackTemplateVersion,
+} from "@/hooks/use-stack-templates";
 import type { StackTemplateInfo, StackTemplateVersionInfo } from "@mini-infra/types";
 
 interface VersionSidebarProps {
@@ -36,7 +45,28 @@ export function VersionSidebar({
   canManageVersions = false,
 }: VersionSidebarProps) {
   const rollback = useRollbackTemplateVersion();
+  const archiveVersion = useArchiveTemplateVersion();
   const [rollbackTarget, setRollbackTarget] = useState<StackTemplateVersionInfo | null>(null);
+  // Archiving is confirmed; restoring is not — the former blocks new installs
+  // and upgrades, the latter only puts a version back on the menu.
+  const [archiveTarget, setArchiveTarget] = useState<StackTemplateVersionInfo | null>(null);
+
+  async function handleSetArchived(version: StackTemplateVersionInfo, archived: boolean) {
+    try {
+      await archiveVersion.mutateAsync({
+        templateId: template.id,
+        versionId: version.id,
+        archived,
+      });
+      toast.success(
+        archived ? `v${version.version} archived` : `v${version.version} restored`,
+      );
+    } catch {
+      // Global MutationCache.onError toasts the actionable error.
+    } finally {
+      setArchiveTarget(null);
+    }
+  }
 
   const draftVersion = versions.find((v) => v.status === "draft");
   const publishedVersions = versions
@@ -133,17 +163,31 @@ export function VersionSidebar({
                     </div>
                   )}
                 </button>
+                {/* The current version is deliberately given neither action:
+                    it cannot be rolled back TO (it is already current), and
+                    archiving it would leave the template unable to instantiate
+                    or upgrade anything — the server refuses. */}
                 {canManageVersions && !isCurrent && (
-                  <div className="px-2 pb-2">
+                  <div className="flex gap-1 px-2 pb-2">
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 w-full justify-start text-xs"
+                      className="h-7 flex-1 justify-start text-xs"
                       disabled={rollback.isPending}
                       onClick={() => setRollbackTarget(version)}
                     >
                       <IconArrowBackUp className="h-3.5 w-3.5 mr-1" />
                       Make current
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 justify-start text-xs"
+                      disabled={archiveVersion.isPending}
+                      onClick={() => setArchiveTarget(version)}
+                      title="Archive this version"
+                    >
+                      <IconArchive className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 )}
@@ -162,30 +206,50 @@ export function VersionSidebar({
                 {archivedVersions.map((version) => {
                   const isSelected = selectedVersionId === version.id;
                   return (
-                    <button
+                    <div
                       key={version.id}
-                      onClick={() => onSelectVersion(version.id)}
-                      className={`w-full text-left rounded-md border px-3 py-2 text-sm transition-colors hover:bg-accent ${
+                      className={`rounded-md border transition-colors ${
                         isSelected ? "border-primary bg-accent" : "border-border"
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="font-medium">v{version.version}</span>
-                        <Badge variant="outline" className="text-xs">
-                          archived
-                        </Badge>
-                      </div>
-                      {version.notes && (
-                        <div className="text-xs text-muted-foreground truncate">
-                          {version.notes}
+                      <button
+                        onClick={() => onSelectVersion(version.id)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="font-medium">v{version.version}</span>
+                          <Badge variant="outline" className="text-xs">
+                            archived
+                          </Badge>
+                        </div>
+                        {version.notes && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {version.notes}
+                          </div>
+                        )}
+                        {version.publishedAt && (
+                          <div className="text-xs text-muted-foreground">
+                            Published {format(new Date(version.publishedAt), "MMM d, yyyy")}
+                          </div>
+                        )}
+                      </button>
+                      {/* Archiving is reversible — without a way back it is a
+                          trap, not a decluttering tool. */}
+                      {canManageVersions && (
+                        <div className="px-2 pb-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-full justify-start text-xs"
+                            disabled={archiveVersion.isPending}
+                            onClick={() => handleSetArchived(version, false)}
+                          >
+                            <IconArchiveOff className="h-3.5 w-3.5 mr-1" />
+                            Restore
+                          </Button>
                         </div>
                       )}
-                      {version.publishedAt && (
-                        <div className="text-xs text-muted-foreground">
-                          Published {format(new Date(version.publishedAt), "MMM d, yyyy")}
-                        </div>
-                      )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -249,6 +313,37 @@ export function VersionSidebar({
             >
               {rollback.isPending && <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />}
               Make current
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={archiveTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setArchiveTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive v{archiveTarget?.version}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It stays readable here, but can no longer be installed, upgraded to,
+              or made current. Stacks already running v{archiveTarget?.version} keep
+              running — archiving retires the version, it doesn&apos;t touch
+              deployments. You can restore it later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={archiveVersion.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={archiveVersion.isPending}
+              onClick={() => archiveTarget && handleSetArchived(archiveTarget, true)}
+            >
+              {archiveVersion.isPending && (
+                <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+              )}
+              Archive
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -31,6 +31,8 @@ import { TemplateParametersSection } from "@/components/stack-templates/template
 import { TemplateNetworksVolumes } from "@/components/stack-templates/template-networks-volumes";
 import { TemplateConfigFilesSection } from "@/components/stack-templates/config-files/template-config-files-section";
 import { TemplateResourceIOSection } from "@/components/stack-templates/template-resource-io-section";
+import { TemplateInputsSection } from "@/components/stack-templates/template-inputs-section";
+import { TemplateRequiresSection } from "@/components/stack-templates/template-requires-section";
 import { VersionSidebar } from "@/components/stack-templates/version-sidebar";
 import { CodeView } from "@/components/stack-templates/code-view/code-view";
 import { buildDraftFromVersion } from "@/lib/application-draft";
@@ -45,6 +47,8 @@ import type {
   DraftVersionInput,
   StackResourceInput,
   StackResourceOutput,
+  TemplateInputDeclaration,
+  StackTemplatePrerequisite,
   StackTemplateConfigFileInput,
 } from "@mini-infra/types";
 
@@ -195,6 +199,20 @@ export default function StackTemplateDetailPage() {
   const handleVolumesChange = useCallback(
     (volumes: StackVolume[]) => {
       handleSaveDraft(buildDraftInput({ volumes }));
+    },
+    [handleSaveDraft, buildDraftInput],
+  );
+
+  const handleInputsChange = useCallback(
+    (inputs: TemplateInputDeclaration[]) => {
+      handleSaveDraft(buildDraftInput({ inputs }));
+    },
+    [handleSaveDraft, buildDraftInput],
+  );
+
+  const handleRequiresChange = useCallback(
+    (requires: StackTemplatePrerequisite[]) => {
+      handleSaveDraft(buildDraftInput({ requires }));
     },
     [handleSaveDraft, buildDraftInput],
   );
@@ -520,6 +538,16 @@ export default function StackTemplateDetailPage() {
                     resourceOutputs={displayVersion.resourceOutputs ?? []}
                     readOnly={readOnly}
                     onChange={handleResourceIOChange}
+                  />
+                  <TemplateInputsSection
+                    inputs={displayVersion.inputs ?? []}
+                    readOnly={readOnly}
+                    onChange={handleInputsChange}
+                  />
+                  <TemplateRequiresSection
+                    requires={displayVersion.requires ?? []}
+                    readOnly={readOnly}
+                    onChange={handleRequiresChange}
                   />
                 </>
               ) : (

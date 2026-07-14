@@ -14,6 +14,7 @@ import { blueGreenDeploymentMachine, type BlueGreenDeploymentContext } from '../
 import { blueGreenUpdateMachine, type BlueGreenUpdateContext } from '../haproxy/blue-green-update-state-machine';
 import { removalDeploymentMachine, type RemovalDeploymentContext } from '../haproxy/removal-deployment-state-machine';
 import { runStateMachineToCompletion } from './state-machine-runner';
+import { createPhaseReporter } from './deployment-phase-emitter';
 import { prepareServiceContainer } from './utils';
 import { removeConflictingContainer } from './stack-conflict-detector';
 import type { StackContainerManager } from './stack-container-manager';
@@ -469,7 +470,8 @@ export class StackServiceHandlers {
         const finalState = await runStateMachineToCompletion<BlueGreenDeploymentContext>(
           blueGreenDeploymentMachine,
           blueGreenContext,
-          (actor) => actor.send({ type: 'START_DEPLOYMENT' })
+          (actor) => actor.send({ type: 'START_DEPLOYMENT' }),
+          createPhaseReporter(stackId, action.serviceName)
         );
 
         const success = finalState.value === 'completed';
@@ -571,7 +573,8 @@ export class StackServiceHandlers {
     const finalState = await runStateMachineToCompletion<BlueGreenUpdateContext>(
       blueGreenUpdateMachine,
       blueGreenContext,
-      (actor) => actor.send({ type: 'START_DEPLOYMENT' })
+      (actor) => actor.send({ type: 'START_DEPLOYMENT' }),
+      createPhaseReporter(stackId, action.serviceName)
     );
 
     const success = finalState.value === 'completed';

@@ -164,6 +164,11 @@ export const ErrorCode = {
   STACK_TEMPLATE_NOT_PUBLISHED: "STACK_TEMPLATE_NOT_PUBLISHED",
   // A specific version was targeted for rollback but isn't a published version.
   STACK_TEMPLATE_VERSION_NOT_PUBLISHED: "STACK_TEMPLATE_VERSION_NOT_PUBLISHED",
+  // Refused: archiving the version a template currently points at would leave
+  // the template unable to instantiate or upgrade anything.
+  STACK_TEMPLATE_VERSION_IS_CURRENT: "STACK_TEMPLATE_VERSION_IS_CURRENT",
+  // The whole TEMPLATE is archived (StackTemplate.isArchived) — distinct from a
+  // single version being archived (StackTemplateVersionStatus.archived).
   STACK_TEMPLATE_ARCHIVED: "STACK_TEMPLATE_ARCHIVED",
   STACK_TEMPLATE_NETWORK_TYPE_MISMATCH: "STACK_TEMPLATE_NETWORK_TYPE_MISMATCH",
   STACK_TEMPLATE_SCOPE_MISMATCH: "STACK_TEMPLATE_SCOPE_MISMATCH",
