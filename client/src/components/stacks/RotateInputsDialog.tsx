@@ -85,7 +85,7 @@ function RotateInputsDialogContent({
         <DialogTitle>Supply upgrade inputs</DialogTitle>
         <DialogDescription>
           {stackName ? `Upgrading ${stackName} needs ` : "This upgrade needs "}
-          fresh {inputs.length === 1 ? "a value" : "values"} for the following{" "}
+          {inputs.length === 1 ? "a fresh value" : "fresh values"} for the following{" "}
           {inputs.length === 1 ? "input" : "inputs"}, which must be rotated on every
           upgrade.
         </DialogDescription>

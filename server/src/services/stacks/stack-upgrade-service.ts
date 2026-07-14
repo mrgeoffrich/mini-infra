@@ -128,12 +128,23 @@ export async function upgradeStackToCurrentTemplateVersion(
   }
 
   if (existing.templateVersion != null && version.version <= existing.templateVersion) {
+    // Two very different situations reach here, and saying "already on the
+    // latest version (v3)" to a stack sitting on v4 is simply false. The second
+    // case happens after a template rollback: the stack is now AHEAD of the
+    // template's current version, and since upgrade only ever targets
+    // `currentVersion` there is no way to move it. Say so, rather than
+    // pretending nothing is wrong.
+    const isAhead = version.version < existing.templateVersion;
     throw new ConflictError(
       ErrorCode.STACK_ALREADY_ON_LATEST,
-      `Stack is already on the latest template version (v${version.version})`,
+      isAhead
+        ? `Stack is on template version v${existing.templateVersion}, which is newer than the template's current version (v${version.version}) — the template was rolled back.`
+        : `Stack is already on the latest template version (v${version.version})`,
       {
         resource: { type: "stack", id: stackId },
-        action: "No upgrade is needed — this stack already tracks the current version.",
+        action: isAhead
+          ? "Publish a newer template version to move this stack forward. Rolling a stack back to an older template version is not supported yet."
+          : "No upgrade is needed — this stack already tracks the current version.",
       },
     );
   }

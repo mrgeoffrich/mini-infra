@@ -3,7 +3,6 @@ import {
   IconAlertCircle,
   IconAlertTriangle,
   IconArrowUp,
-  IconArrowUpCircle,
   IconLoader2,
 } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
@@ -56,34 +55,19 @@ export function UpdateAvailableBadge({ className }: { className?: string }) {
 
 /**
  * Presentation per attention level. A stack whose service has crashed is an
- * outage and must not look like "a newer template version exists" — before
- * these levels existed, every reason rendered in the same amber and the badge
- * could not tell the two apart.
+ * outage and must not look like "a newer template version exists" — before the
+ * server-computed levels existed, every reason rendered in the same amber and
+ * the badge could not tell the two apart.
  */
-const ATTENTION_STYLES: Record<
-  StackAttentionLevel,
-  { label: string; className: string; icon: typeof IconAlertTriangle }
+const ATTENTION_STYLES: Partial<
+  Record<StackAttentionLevel, { className: string; icon: typeof IconAlertTriangle }>
 > = {
   critical: {
-    label: "Needs attention",
     className:
       "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-300",
     icon: IconAlertCircle,
   },
   warning: {
-    label: "Needs attention",
-    className:
-      "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
-    icon: IconAlertTriangle,
-  },
-  info: {
-    label: "Update available",
-    className:
-      "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300",
-    icon: IconArrowUpCircle,
-  },
-  none: {
-    label: "Needs attention",
     className:
       "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
     icon: IconAlertTriangle,
@@ -92,9 +76,14 @@ const ATTENTION_STYLES: Record<
 
 /**
  * Single "needs attention" indicator rolling up live runtime issues, drift,
- * NATS drift, error status, and update-available into one affordance with the
- * reasons listed. Severity comes from the server-computed level.
- * Renders nothing when the stack is healthy and nothing is pending.
+ * NATS drift and error status into one affordance with the reasons listed.
+ * Severity comes from the server-computed level.
+ *
+ * Renders nothing when the stack is healthy, and nothing at `info` either: an
+ * available template upgrade is an opportunity, not something wrong, and every
+ * surface that renders this badge already renders the dedicated
+ * {@link UpdateAvailableBadge} beside it. Showing both said "Update available"
+ * twice in the same row.
  */
 export function NeedsAttentionBadge({
   stack,
@@ -104,9 +93,9 @@ export function NeedsAttentionBadge({
   className?: string;
 }) {
   const attention = getStackAttention(stack);
-  if (!attention.needsAttention) return null;
+  const style = ATTENTION_STYLES[attention.level];
+  if (!attention.needsAttention || !style) return null;
 
-  const style = ATTENTION_STYLES[attention.level] ?? ATTENTION_STYLES.warning;
   const Icon = style.icon;
 
   return (
@@ -119,7 +108,7 @@ export function NeedsAttentionBadge({
             data-tour="stack-needs-attention-badge"
           >
             <Icon className="mr-1 h-3 w-3" />
-            {style.label}
+            Needs attention
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-sm">
