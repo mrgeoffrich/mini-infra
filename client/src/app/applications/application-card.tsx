@@ -29,8 +29,15 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useDeployApplicationUpdate } from "@/hooks/use-applications";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
@@ -51,13 +58,19 @@ interface ApplicationCardProps {
   serviceType: StackServiceType | null;
   isBusy: boolean;
   isStopping: boolean;
+  isApplying: boolean;
   onDeploy: (app: StackTemplateInfo) => void;
   onStop: (app: StackTemplateInfo) => void;
+  onApply: (app: StackTemplateInfo) => void;
+  onRemove: (app: StackTemplateInfo) => void;
   onDelete: (app: StackTemplateInfo) => void;
   onEdit: (app: StackTemplateInfo) => void;
 }
 
 const DOCKER_TAG_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/;
+
+/** Statuses that the DB treats as terminal — they win over a latched task phase. */
+const TERMINAL_STATUSES = new Set(["synced", "error", "undeployed"]);
 
 function pickPrimaryService(stack: StackInfo | undefined): StackServiceInfo | null {
   if (!stack?.services?.length) return null;
@@ -76,8 +89,11 @@ export function ApplicationCard({
   serviceType,
   isBusy,
   isStopping,
+  isApplying,
   onDeploy,
   onStop,
+  onApply,
+  onRemove,
   onDelete,
   onEdit,
 }: ApplicationCardProps) {
@@ -114,9 +130,21 @@ export function ApplicationCard({
   // fire-and-forget (clears on the "started" ACK) and the stack status only
   // flips to "pending" after a refetch, so neither reliably covers the whole
   // deploy — the tracked task does. Keep the card locked while any of them hold.
+  //
+  // BUT: a missed terminal socket event (e.g. during a disconnect) can latch a
+  // stale `executing` phase forever. So the fresh DB status wins — once the
+  // stack is in a terminal state (synced/error/undeployed), we ignore the task
+  // phase and unlock the card.
   const trackedTask = primaryStack ? getTask(primaryStack.id) : undefined;
-  const taskExecuting = trackedTask?.operationState.phase === "executing";
+  const dbStatusTerminal = !!primaryStack && TERMINAL_STATUSES.has(primaryStack.status);
+  const taskExecuting =
+    trackedTask?.operationState.phase === "executing" && !dbStatusTerminal;
   const effectivelyBusy = isBusy || deployUpdate.isPending || taskExecuting;
+
+  // A `pending` stack with no in-flight tracked task has UNAPPLIED changes —
+  // it isn't busy, it's waiting for an apply. Surface an "Apply changes" CTA
+  // instead of a dead Update button.
+  const pendingUnapplied = primaryStack?.status === "pending" && !taskExecuting;
 
   // Don't show the flipped face while the stack is churning — the busy overlay
   // takes precedence. Derived rather than an effect to avoid cascading renders.
@@ -125,6 +153,14 @@ export function ApplicationCard({
   const trimmedTag = tagDraft.trim();
   const tagChanged = trimmedTag !== currentTag;
   const tagValid = DOCKER_TAG_PATTERN.test(trimmedTag);
+
+  const busyReason = isStopping
+    ? "The application is stopping…"
+    : isApplying
+      ? "Changes are being applied…"
+      : taskExecuting || deployUpdate.isPending
+        ? "A deployment is in progress…"
+        : null;
 
   const handleDeployUpdate = async () => {
     if (!primaryStack || !primaryService || !tagValid) return;
@@ -140,6 +176,7 @@ export function ApplicationCard({
         serviceName: primaryService.serviceName,
         newTag: trimmedTag,
         currentTag,
+        stackStatus: primaryStack.status,
       });
       closeUpdateForm();
     } catch {
@@ -217,12 +254,22 @@ export function ApplicationCard({
                     <IconPencil className="h-4 w-4 mr-2" />
                     Edit
                   </DropdownMenuItem>
+                  {hasStacks && (
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => onRemove(app)}
+                    >
+                      <IconPlayerStop className="h-4 w-4 mr-2" />
+                      {adopted ? "Disconnect & remove" : "Remove deployment"}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onClick={() => onDelete(app)}
                   >
                     <IconTrash className="h-4 w-4 mr-2" />
-                    Delete
+                    Delete application
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -278,23 +325,52 @@ export function ApplicationCard({
               )}
               {hasStacks && (
                 <>
-                  {!adopted && (
+                  {pendingUnapplied ? (
                     <Button
                       size="sm"
-                      variant="outline"
                       className="flex-1"
                       disabled={effectivelyBusy}
-                      onClick={openUpdateForm}
+                      onClick={() => onApply(app)}
                     >
-                      <IconRefresh className="h-4 w-4 mr-1" />
-                      Update
+                      {isApplying ? (
+                        <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                      ) : (
+                        <IconRefresh className="h-4 w-4 mr-1" />
+                      )}
+                      Apply changes
                     </Button>
+                  ) : (
+                    !adopted && (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            {/* span wrapper: a disabled button emits no pointer
+                                events, so the tooltip needs a live element. */}
+                            <span className="flex-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="w-full"
+                                disabled={effectivelyBusy}
+                                onClick={openUpdateForm}
+                              >
+                                <IconRefresh className="h-4 w-4 mr-1" />
+                                Update
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          {effectivelyBusy && busyReason && (
+                            <TooltipContent>{busyReason}</TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
+                    )
                   )}
                   <Button
                     size="sm"
                     variant="outline"
                     className="flex-1"
-                    disabled={isStopping}
+                    disabled={isStopping || effectivelyBusy}
                     onClick={() => onStop(app)}
                   >
                     {isStopping ? (

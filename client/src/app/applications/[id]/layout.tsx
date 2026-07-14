@@ -7,10 +7,12 @@ import {
   IconLoader2,
   IconPlayerPlay,
   IconPlayerStop,
+  IconRefresh,
   IconTrash,
 } from "@tabler/icons-react";
 import {
   useApplication,
+  useApplyApplicationStack,
   useDeleteApplication,
   useDeployApplication,
   useStopApplication,
@@ -80,6 +82,7 @@ export default function ApplicationDetailLayout() {
 
   const deployApplication = useDeployApplication();
   const stopApplication = useStopApplication();
+  const applyApplicationStack = useApplyApplicationStack();
   const deleteApplication = useDeleteApplication();
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -100,7 +103,23 @@ export default function ApplicationDetailLayout() {
   const url = useMemo(() => getAppUrl(primaryStack), [primaryStack]);
 
   const hasStacks = stacks.length > 0;
-  const isDeploying = primaryStack?.status === "pending";
+  const stackStatus = primaryStack?.status;
+  // A stack that isn't cleanly running needs an explicit apply/retry: `pending`
+  // has unapplied edits, `error` failed a prior apply, `undeployed` was stopped
+  // and can be redeployed. Apply has no status guard, so it recovers all three.
+  const needsApply =
+    stackStatus === "pending" ||
+    stackStatus === "error" ||
+    stackStatus === "undeployed";
+  const applyLabel =
+    stackStatus === "error"
+      ? "Retry"
+      : stackStatus === "undeployed"
+        ? "Deploy"
+        : "Apply changes";
+  // Stop is only meaningful while containers are up — an already-undeployed
+  // stack has nothing to stop.
+  const canStop = hasStacks && stackStatus !== "undeployed";
 
   const handleDeploy = async () => {
     if (!template?.environmentId) return;
@@ -129,12 +148,29 @@ export default function ApplicationDetailLayout() {
       for (const stack of stacks) {
         registerTask({
           id: stack.id,
-          type: "stack-destroy",
+          type: "stack-stop",
           label: `Stopping ${template.displayName ?? template.name}`,
           channel: Channel.STACKS,
         });
       }
       await Promise.all(stacks.map((s) => stopApplication.mutateAsync(s.id)));
+    } catch {
+      // toast handled by mutation
+    }
+  };
+
+  const handleApply = async () => {
+    if (!hasStacks || !template) return;
+    try {
+      for (const stack of stacks) {
+        registerTask({
+          id: stack.id,
+          type: "stack-apply",
+          label: `Applying ${template.displayName ?? template.name}`,
+          channel: Channel.STACKS,
+        });
+      }
+      await Promise.all(stacks.map((s) => applyApplicationStack.mutateAsync(s.id)));
     } catch {
       // toast handled by mutation
     }
@@ -191,7 +227,6 @@ export default function ApplicationDetailLayout() {
     );
   }
 
-  const stackStatus = primaryStack?.status;
   const statusBadge = !primaryStack ? (
     <Badge variant="outline">Not deployed</Badge>
   ) : stackStatus === "synced" ? (
@@ -270,11 +305,24 @@ export default function ApplicationDetailLayout() {
                 Deploy
               </Button>
             )}
-            {hasStacks && (
+            {hasStacks && needsApply && (
+              <Button
+                onClick={handleApply}
+                disabled={applyApplicationStack.isPending}
+              >
+                {applyApplicationStack.isPending ? (
+                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <IconRefresh className="h-4 w-4 mr-2" />
+                )}
+                {applyLabel}
+              </Button>
+            )}
+            {canStop && (
               <Button
                 variant="outline"
                 onClick={handleStop}
-                disabled={stopApplication.isPending || isDeploying}
+                disabled={stopApplication.isPending || applyApplicationStack.isPending}
               >
                 {stopApplication.isPending ? (
                   <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
