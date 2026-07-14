@@ -26,7 +26,7 @@ const LOKI_URL = inDocker ? `http://${MONITORING_PROJECT}-loki:3100` : 'http://l
 
 async function getMonitoringStack() {
   return prisma.stack.findFirst({
-    where: { name: 'monitoring', environmentId: null, status: { not: 'removed' } },
+    where: { name: 'monitoring', environmentId: null },
     include: { services: { orderBy: { order: 'asc' } } },
   });
 }

@@ -1,7 +1,7 @@
 {
   "name": "postgres",
   "displayName": "PostgreSQL Database",
-  "builtinVersion": 2,
+  "builtinVersion": 3,
   "scope": "environment",
   "category": "database",
   "description": "PostgreSQL database server with persistent storage",
@@ -77,10 +77,10 @@
         "restartPolicy": "unless-stopped",
         "healthcheck": {
           "test": ["CMD-SHELL", "pg_isready -U {{params.postgres-user}} -d {{params.postgres-db}}"],
-          "interval": 30,
-          "timeout": 5,
+          "interval": 30000,
+          "timeout": 5000,
           "retries": 3,
-          "startPeriod": 30
+          "startPeriod": 30000
         },
         "joinResourceNetworks": ["database"],
         "logConfig": {

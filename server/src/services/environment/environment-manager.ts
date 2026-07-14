@@ -242,7 +242,7 @@ export class EnvironmentManager {
               },
             },
             stacks: {
-              where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+              where: { template: { source: 'system' }, status: { not: 'undeployed' } },
               select: { id: true },
             },
         }
@@ -333,7 +333,7 @@ export class EnvironmentManager {
               },
             },
             stacks: {
-              where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+              where: { template: { source: 'system' }, status: { not: 'undeployed' } },
               select: { id: true },
             },
         }
@@ -370,7 +370,7 @@ export class EnvironmentManager {
               },
             },
             stacks: {
-              where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+              where: { template: { source: 'system' }, status: { not: 'undeployed' } },
               select: { id: true },
             },
           },
@@ -419,7 +419,7 @@ export class EnvironmentManager {
                 },
               },
               stacks: {
-                where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+                where: { template: { source: 'system' }, status: { not: 'undeployed' } },
                 select: { id: true },
               },
           }
@@ -639,9 +639,9 @@ export class EnvironmentManager {
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Removed ${removedNetworkRows.count} ManagedNetwork record(s)`);
       }
 
-      // Clean up undeployed/removed stacks that reference this environment
+      // Clean up undeployed stacks that reference this environment
       const orphanedStacks = await this.prisma.stack.findMany({
-        where: { environmentId: id, status: { in: ['removed', 'undeployed'] } },
+        where: { environmentId: id, status: 'undeployed' },
         select: { id: true, name: true, status: true },
       });
       if (orphanedStacks.length > 0) {

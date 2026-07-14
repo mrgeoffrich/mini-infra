@@ -411,6 +411,13 @@ export function useStackUpgrade() {
  * template's current published version (POST /upgrade), then run the tracked
  * apply (POST /apply). The apply is fire-and-forget — progress streams via
  * Socket.IO and is surfaced by the global task tracker under "stack-apply".
+ *
+ * Because the apply is fire-and-forget, this mutation resolves when the deploy
+ * *starts*, not when it finishes — and the dialogs that call it close on that
+ * ACK. Without a hand-off the user is left staring at a closed dialog with no
+ * idea whether anything happened, so success explicitly points at the tracker
+ * where the deploy is actually running. Toasting here rather than at each of
+ * the three call sites keeps the hand-off consistent across all of them.
  */
 export function useUpgradeAndApplyStack() {
   const queryClient = useQueryClient();
@@ -429,7 +436,12 @@ export function useUpgradeAndApplyStack() {
       registerTask({ id: stackId, type: "stack-apply", label, channel: Channel.STACKS });
       await applyStack(stackId, {});
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Title mirrors the label this deploy is registered under in the tracker,
+      // so the toast names the exact entry it is pointing the user at.
+      toast.success(variables.label, {
+        description: "Deploying now — follow progress in the task tracker.",
+      });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });

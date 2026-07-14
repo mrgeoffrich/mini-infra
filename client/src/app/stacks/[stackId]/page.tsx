@@ -79,7 +79,7 @@ export default function StackDetailPage() {
       ? `/applications/${stack.templateId}`
       : `/stack-templates/${stack.templateId}`
     : null;
-  const canStop = stack.status !== "undeployed" && stack.status !== "removed";
+  const canStop = stack.status !== "undeployed";
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -94,7 +94,10 @@ export default function StackDetailPage() {
           Back to Stacks
         </Button>
 
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div
+          className="flex flex-wrap items-start justify-between gap-4"
+          data-tour="stack-detail-header"
+        >
           <div className="min-w-0">
             <h1 className="truncate text-3xl font-bold">{stack.name}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -145,6 +148,7 @@ export default function StackDetailPage() {
                 onClick={() =>
                   stopStack.mutate({ stackId: stack.id, label: `Stopping ${stack.name}` })
                 }
+                data-tour="stack-detail-stop-button"
               >
                 <IconPlayerStop className="mr-2 h-4 w-4" />
                 Stop
@@ -165,12 +169,12 @@ export default function StackDetailPage() {
 
       {/* Plan / apply / selective apply / redeploy / uninstall — the canonical
           stack operations panel, reused from the infra lists. */}
-      <div className="px-4 lg:px-6">
+      <div className="px-4 lg:px-6" data-tour="stack-detail-plan">
         <StackPlanView stackId={stack.id} onDestroyCompleted={() => navigate("/stacks")} />
       </div>
 
       {/* Deployment history — reused from the application activity tab. */}
-      <div className="px-4 lg:px-6">
+      <div className="px-4 lg:px-6" data-tour="stack-detail-history">
         <HistorySection primaryStack={stack} />
       </div>
     </div>

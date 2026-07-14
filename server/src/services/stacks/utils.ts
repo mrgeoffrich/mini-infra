@@ -10,8 +10,11 @@ import type {
   StackVolume,
   StackInfo,
   StackServiceInfo,
+  StackStatus,
+  StackRuntimeIssue,
+  NatsDriftInfo,
 } from '@mini-infra/types';
-import { ErrorCode } from '@mini-infra/types';
+import { ErrorCode, computeStackAttention } from '@mini-infra/types';
 import { NotFoundError } from '../../lib/errors';
 import { buildTemplateContext, resolveStackConfigFiles, resolveServiceDefinition } from './template-engine';
 import { computeDefinitionHash, computeSyntheticDefinitionHash } from './definition-hash';
@@ -84,7 +87,23 @@ type SerializableService = {
  *
  * lastFailureReason is kept — operators need it to diagnose failed applies.
  */
-export function serializeStack(stack: SerializableStack): StackInfo {
+/**
+ * Extras the caller has already fetched and that are not columns on the stack
+ * row. `natsDrift` needs its own query (see `detectNatsDrift`), so routes pass
+ * it in rather than this function reaching for prisma — which keeps
+ * `serializeStack` pure and cheap to call in a list.
+ *
+ * Passing it matters: `needsAttention` folds NATS drift into its rollup, so a
+ * route that omits it silently under-reports.
+ */
+export interface SerializeStackExtras {
+  natsDrift?: NatsDriftInfo | null;
+}
+
+export function serializeStack(
+  stack: SerializableStack,
+  extras: SerializeStackExtras = {},
+): StackInfo {
   let inputValueKeys: string[] | undefined;
   if (stack.encryptedInputValues) {
     try {
@@ -102,6 +121,11 @@ export function serializeStack(stack: SerializableStack): StackInfo {
   void _strippedEncrypted;
   void _strippedSnapshot;
 
+  const templateUpdateAvailable = computeTemplateUpdateAvailable(stack);
+  const runtimeIssues = normaliseRuntimeIssues(
+    (stack as { runtimeIssues?: unknown }).runtimeIssues,
+  );
+
   return {
     ...rest,
     parameters: stack.parameters ?? [],
@@ -112,7 +136,7 @@ export function serializeStack(stack: SerializableStack): StackInfo {
     templateVersion: stack.templateVersion ?? null,
     templateSource: (stack.template?.source as 'system' | 'user' | undefined) ?? null,
     templateCurrentVersion: stack.template?.currentVersion?.version ?? null,
-    templateUpdateAvailable: computeTemplateUpdateAvailable(stack),
+    templateUpdateAvailable,
     tlsCertificates: stack.tlsCertificates ?? [],
     dnsRecords: stack.dnsRecords ?? [],
     tunnelIngress: stack.tunnelIngress ?? [],
@@ -120,8 +144,32 @@ export function serializeStack(stack: SerializableStack): StackInfo {
     createdAt: stack.createdAt.toISOString(),
     updatedAt: stack.updatedAt.toISOString(),
     services: stack.services?.map(serializeService),
+    runtimeIssues,
+    ...(extras.natsDrift !== undefined ? { natsDrift: extras.natsDrift } : {}),
+    // Computed server-side so every consumer — the UI, the agent sidecar, an
+    // API-key integration — gets the same answer instead of reimplementing it.
+    // Shares one implementation with the client via @mini-infra/types.
+    needsAttention: computeStackAttention({
+      status: stack.status as StackStatus,
+      lastFailureReason: (stack as { lastFailureReason?: string | null }).lastFailureReason,
+      runtimeIssues,
+      natsDrift: extras.natsDrift,
+      templateUpdateAvailable,
+    }),
     ...(inputValueKeys !== undefined ? { inputValueKeys } : {}),
   } as StackInfo;
+}
+
+/** The Json column comes back as `unknown`; keep anything malformed out of the rollup. */
+function normaliseRuntimeIssues(value: unknown): StackRuntimeIssue[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (issue): issue is StackRuntimeIssue =>
+      typeof issue === 'object' &&
+      issue !== null &&
+      typeof (issue as { kind?: unknown }).kind === 'string' &&
+      typeof (issue as { serviceName?: unknown }).serviceName === 'string',
+  );
 }
 
 function computeTemplateUpdateAvailable(stack: SerializableStack): boolean {

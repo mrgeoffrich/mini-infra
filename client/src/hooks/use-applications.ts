@@ -444,31 +444,6 @@ export function useRemoveApplicationStack() {
   });
 }
 
-export function useRedeployApplication() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    meta: { errorContext: "application" },
-    mutationFn: async (args: { stackId: string; stackStatus: StackStatus }) => {
-      // A no-op-tag redeploy of a synced/drifted stack is a pull-latest via
-      // /update; any other status must recover through /apply (which has no
-      // status guard) or /update would 400 with STACK_NOT_DEPLOYED.
-      if (UPDATABLE_STATUSES.has(args.stackStatus)) {
-        await updateStack(args.stackId);
-      } else {
-        await applyStack(args.stackId);
-      }
-    },
-    onSuccess: () => {
-      toast.success("Application update started");
-      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
-      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
-    },
-    // No onError — the global MutationCache.onError toasts by default.
-  });
-}
-
 /**
  * Apply/Retry a stack directly — the recovery path for a stack in
  * `error`/`pending`/`undeployed`. POST /apply has no status guard, so it is

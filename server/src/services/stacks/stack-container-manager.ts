@@ -9,6 +9,7 @@ import { InternalError } from '../../lib/errors';
 import { groupByProperty } from './utils';
 import { resolveEgressEnv } from './egress-injection';
 import { resolveStackMountSource } from './stack-mounts';
+import { healthcheckToDocker } from './healthcheck-config';
 import type { PrismaClient } from '../../generated/prisma/client';
 import { createNetworkManager, type NetworkManager } from '../networks';
 
@@ -180,18 +181,7 @@ export class StackContainerManager {
       ReadOnly: m.readOnly,
     }));
 
-    // Convert healthcheck seconds to nanoseconds. By this point template
-    // references like "{{params.x}}" have been resolved to numbers, so
-    // Number() is a narrowing cast, not a parse.
-    const healthcheck = config.healthcheck
-      ? {
-          Test: config.healthcheck.test,
-          Interval: Number(config.healthcheck.interval) * 1_000_000_000,
-          Timeout: Number(config.healthcheck.timeout) * 1_000_000_000,
-          Retries: Number(config.healthcheck.retries),
-          StartPeriod: Number(config.healthcheck.startPeriod) * 1_000_000_000,
-        }
-      : undefined;
+    const healthcheck = healthcheckToDocker(config.healthcheck);
 
     // Convert log config
     const logConfig = config.logConfig

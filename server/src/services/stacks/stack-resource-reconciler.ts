@@ -608,8 +608,34 @@ export class StackResourceReconciler {
           }
         }
       }
-      // TLS certs stay in the store
-      // TODO: Tunnel cleanup when tunnel service is ready
+
+      // Destroying a stack must undo its tunnel ingress too, or the hostname
+      // keeps routing to a service that no longer exists and the CNAME dangles.
+      // This mirrors the `remove` action in reconcileTunnels() — the two are the
+      // same operation, one per-resource and one for the whole stack.
+      if (resource.resourceType === 'tunnel' && resource.externalId && this.cloudflareService) {
+        const fqdn = resource.fqdn ?? resource.resourceName;
+        try {
+          await this.cloudflareService.removeHostname(resource.externalId, fqdn);
+          log.info({ resourceName: resource.resourceName, fqdn }, 'Removed hostname from Cloudflare tunnel');
+        } catch (err) {
+          // Already gone is success — destroy must be idempotent.
+          const message = err instanceof Error ? err.message : '';
+          if (message.includes('not found')) {
+            log.info({ fqdn }, 'Hostname not found in tunnel, continuing');
+          } else {
+            log.warn({ err, resourceName: resource.resourceName }, 'Failed to remove hostname from Cloudflare tunnel (non-fatal)');
+          }
+        }
+
+        try {
+          await this.cloudflareDns.deleteCNAMEByHostname(fqdn);
+        } catch (err) {
+          log.warn({ err, fqdn }, 'Failed to delete tunnel CNAME record (non-fatal)');
+        }
+      }
+
+      // TLS certs stay in the store — they are reusable and expensive to reissue.
     }
 
     // Delete all DB records

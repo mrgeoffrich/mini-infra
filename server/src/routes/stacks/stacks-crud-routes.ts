@@ -142,7 +142,10 @@ router.get(
 
     res.json({
       success: true,
-      data: stacks.map((s, i) => ({ ...serializeStack(s), natsDrift: driftByStack[i] })),
+      // Pass natsDrift *into* serializeStack rather than spreading it on after:
+      // the needsAttention rollup folds it in, and a spread would land after the
+      // rollup had already been computed without it.
+      data: stacks.map((s, i) => serializeStack(s, { natsDrift: driftByStack[i] })),
     });
   }),
 );
@@ -219,7 +222,7 @@ router.get(
       lastAppliedNatsSnapshot: stack.lastAppliedNatsSnapshot,
     }).catch(() => null);
 
-    res.json({ success: true, data: { ...serializeStack(stack), natsDrift } });
+    res.json({ success: true, data: serializeStack(stack, { natsDrift }) });
   }),
 );
 
@@ -265,7 +268,7 @@ router.post(
       }
 
       const existing = await prisma.stack.findFirst({
-        where: { name, environmentId, status: { not: 'removed' } },
+        where: { name, environmentId },
       });
       if (existing) {
         throw new ConflictError(
@@ -279,7 +282,7 @@ router.post(
       }
     } else {
       const existing = await prisma.stack.findFirst({
-        where: { name, environmentId: null, status: { not: 'removed' } },
+        where: { name, environmentId: null },
       });
       if (existing) {
         throw new ConflictError(

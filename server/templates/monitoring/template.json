@@ -1,7 +1,7 @@
 {
   "name": "monitoring",
   "displayName": "Monitoring Stack",
-  "builtinVersion": 2,
+  "builtinVersion": 3,
   "scope": "host",
   "category": "infrastructure",
   "description": "Container metrics monitoring with Telegraf, Prometheus, and centralized log collection with Loki and Alloy",
@@ -36,10 +36,10 @@
         "restartPolicy": "unless-stopped",
         "healthcheck": {
           "test": ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9273/metrics"],
-          "interval": 30,
-          "timeout": 3,
+          "interval": 30000,
+          "timeout": 3000,
           "retries": 3,
-          "startPeriod": 10
+          "startPeriod": 10000
         },
         "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
       },
@@ -68,10 +68,10 @@
         "restartPolicy": "unless-stopped",
         "healthcheck": {
           "test": ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"],
-          "interval": 30,
-          "timeout": 3,
+          "interval": 30000,
+          "timeout": 3000,
           "retries": 3,
-          "startPeriod": 10
+          "startPeriod": 10000
         },
         "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
       },
@@ -105,10 +105,10 @@
         "restartPolicy": "unless-stopped",
         "healthcheck": {
           "test": ["NONE"],
-          "interval": 30,
-          "timeout": 3,
+          "interval": 30000,
+          "timeout": 3000,
           "retries": 3,
-          "startPeriod": 30
+          "startPeriod": 30000
         },
         "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
       },
@@ -148,10 +148,10 @@
         "restartPolicy": "unless-stopped",
         "healthcheck": {
           "test": ["CMD-SHELL", "bash -c \"echo > /dev/tcp/localhost/12345\" 2>/dev/null"],
-          "interval": 30,
-          "timeout": 3,
+          "interval": 30000,
+          "timeout": 3000,
           "retries": 3,
-          "startPeriod": 20
+          "startPeriod": 20000
         },
         "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
       },

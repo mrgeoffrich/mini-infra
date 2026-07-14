@@ -268,7 +268,7 @@ export async function listRunningEgressAgents(prisma: PrismaClient): Promise<Run
 
   if (fwTemplate) {
     const fwStacks = await prisma.stack.findMany({
-      where: { templateId: fwTemplate.id, environmentId: null, status: { not: "removed" } },
+      where: { templateId: fwTemplate.id, environmentId: null },
       select: {
         id: true,
         name: true,
@@ -289,7 +289,7 @@ export async function listRunningEgressAgents(prisma: PrismaClient): Promise<Run
 
   if (gwTemplate) {
     const gwStacks = await prisma.stack.findMany({
-      where: { templateId: gwTemplate.id, environmentId: { not: null }, status: { not: "removed" } },
+      where: { templateId: gwTemplate.id, environmentId: { not: null } },
       select: {
         id: true,
         name: true,

@@ -282,12 +282,10 @@ export class EgressContainerMapPusher {
   private async _buildContainerMap(env: EnvRow): Promise<ContainerMapEntry[]> {
     const egressNetwork = `${env.name}-egress`;
 
-    // Stacks in this environment that are not removed.
+    // Stacks in this environment.
     const stacks = await this.prisma.stack.findMany({
       where: {
         environmentId: env.id,
-        status: { not: 'removed' },
-        removedAt: null,
       },
       select: {
         id: true,

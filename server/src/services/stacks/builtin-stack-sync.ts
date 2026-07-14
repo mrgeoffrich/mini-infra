@@ -179,7 +179,7 @@ async function upgradeStackFromTemplate(
 
   // Apply environment-driven parameter overrides to existing non-running stacks
   // (e.g. expose-on-host=false for internet-facing HAProxy)
-  const canApplyOverrides = ["undeployed", "error", "pending", "removed"].includes(existing.status);
+  const canApplyOverrides = ["undeployed", "error", "pending"].includes(existing.status);
   if (Object.keys(parameterOverrides).length > 0 && canApplyOverrides) {
     const existingValues = (existing.parameterValues as unknown as Record<string, StackParameterValue>) ?? {};
     const needsUpdate = Object.entries(parameterOverrides).some(

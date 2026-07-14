@@ -68,31 +68,53 @@ sections:
     articles:
       - slug: application-management
         topics:
-          - Creating application templates — name, image, ports, env vars, volumes
+          - An application IS a stack built from a user-source stack template
+          - Creating applications — name, image, ports, env vars, volumes
           - Service types — Stateful vs StatelessWeb
-          - Deploying, updating, and stopping applications
+          - Save vs Save & deploy — Save publishes a template version but does NOT touch the running stack
+          - Upgrade & deploy — adopt the template's newest published version, tracked end to end
+          - Discard pending changes — throw away unapplied definition edits
+          - Update — pull a new image build under the same tag (not the same as Upgrade & deploy)
+          - Stop vs Remove deployment vs Delete application — Stop keeps volumes and definition, Remove destroys them, Delete removes the template
           - Zero-downtime updates for StatelessWeb services
           - Routing configuration — hostname, listening port, SSL, Cloudflare tunnel
-          - Application cards with status indicators
-          - Health check configuration
+          - Needs attention and Update available badges on application cards
+          - Health check configuration — durations are milliseconds, retries is a count
           - Port auto-detection from Docker images
+          - Environment is permanent once set
       - slug: host-stacks
         topics:
-          - Host-level infrastructure stacks outside environments
+          - The global Stacks page — every stack across host and environment scopes, live-updating
+          - Filtering by scope, source, status, and needs-attention
           - Plan and apply workflow — review changes before deploying
           - Stack status values — Synced, Drifted, Pending, Error, Undeployed
+          - Drifted may mean a service CRASHED — a background monitor (Docker events + 60s sweep) flips synced to drifted on its own
+          - Needs attention rollup — levels critical / warning / info / none, with reasons naming the offending service
+          - Discard pending changes — restore the last applied snapshot, touches no containers
+          - Upgrade & deploy and the Update available badge
+          - Stop vs Remove/Uninstall vs Delete — Stop keeps definition and volumes
+          - Destroying a stack cleans up its Cloudflare tunnel hostname and CNAME
           - Service diff view — image changes, environment variable changes
           - Apply all vs apply selected services
           - Monitoring stack — Telegraf, Prometheus, Loki, Alloy
           - Config files and init commands for services
           - Service dependencies and deployment order
+          - Expect one round of drift after upgrading Mini Infra (healthcheck units moved to milliseconds)
       - slug: stack-templates
         topics:
           - Reusable stack blueprints for multi-service deployments
-          - Template editor — services, parameters, networks, volumes
-          - Draft and publish versioning workflow
+          - Template editor — services, parameters, inputs, networks, volumes
+          - Draft and publish versioning workflow — Create Draft, Publish, Discard Draft
+          - Version diff before publishing — services added/removed/changed, field-level changes
+          - Rollback via "Make current" — changes what current means, does not touch running stacks
+          - Install dialog — name, environment, parameter overrides, input values; creates the stack but does NOT apply it
+          - Inputs marked rotate-on-upgrade must be freshly supplied on every upgrade
+          - Used by N stacks — publishing flags every one of them as having an update available
+          - System templates are read-only and ship with Mini Infra releases
+          - Archiving vs deleting — templates in use cannot be deleted
+          - Cross-stack prerequisites — stack and predicate; install soft-warns, apply is blocked
           - Template scopes — Host vs Environment
-          - System vs User template sources
+          - Healthcheck durations are milliseconds; retries is a count
       - slug: claude-shell
         topics:
           - Claude Shell — Tailscale-SSH-reachable developer container with Claude Code baked in

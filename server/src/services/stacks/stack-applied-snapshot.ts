@@ -69,6 +69,11 @@ export function buildAppliedSnapshot(
         addons: (s.addons as Record<string, unknown> | null | undefined) ?? undefined,
       }));
 
+  // NOTE: this is the `serializeStack` from @mini-infra/types (a pure
+  // definition serializer), NOT the server's API serializer in ./utils. The
+  // snapshot is a record of desired state, so it deliberately does not carry
+  // the live-health fields (`needsAttention`, `runtimeIssues`) that the API
+  // serializer derives.
   return serializeStack({
     ...stack,
     networks: stack.networks as unknown as StackNetwork[],

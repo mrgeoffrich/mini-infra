@@ -280,6 +280,30 @@ describe("POST /api/stacks/:stackId/upgrade", () => {
       .send({});
     expect(res.status).toBe(409);
     expect(res.body.error).toBe("STACK_ALREADY_ON_LATEST");
+    expect(res.body.message).toContain("already on the latest");
+  });
+
+  it("tells a stack stranded ahead by a rollback the truth, not 'already on latest'", async () => {
+    // After a template rollback the stack can sit on a version NEWER than the
+    // template's current one. Upgrade only ever targets `currentVersion`, so it
+    // is refused — but telling a stack on v3 that it is "already on the latest
+    // version (v2)" is simply false, and hides the fact that a rollback stranded
+    // it. See P4 4.2 for the real fix (upgrade/downgrade to a chosen version).
+    const { templateId, v2Id } = await seedTemplateWithTwoVersions();
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 3, // ahead of the template's current version (v2)
+      templateVersionId: v2Id,
+    });
+
+    const res = await supertest(buildApp())
+      .post(`/api/stacks/${stackId}/upgrade`)
+      .send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("STACK_ALREADY_ON_LATEST");
+    expect(res.body.message).toContain("newer than the template's current version");
+    expect(res.body.message).toContain("rolled back");
+    expect(res.body.message).not.toContain("already on the latest");
   });
 
   it("returns 409 when an operation is already in progress", async () => {

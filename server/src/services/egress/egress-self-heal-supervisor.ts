@@ -374,7 +374,7 @@ async function probeEgressStacks(prisma: PrismaClient): Promise<EgressStackHealt
   // Host fw-agent stack (singleton).
   if (fwTemplate) {
     const fwStack = await prisma.stack.findFirst({
-      where: { templateId: fwTemplate.id, environmentId: null, status: { not: "removed" } },
+      where: { templateId: fwTemplate.id, environmentId: null },
       select: { id: true, name: true },
     });
     if (fwStack) {
@@ -395,7 +395,6 @@ async function probeEgressStacks(prisma: PrismaClient): Promise<EgressStackHealt
     const gwStacks = await prisma.stack.findMany({
       where: {
         templateId: gwTemplate.id,
-        status: { not: "removed" },
         environmentId: { not: null },
       },
       select: { id: true, name: true, environmentId: true },

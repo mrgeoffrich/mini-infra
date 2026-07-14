@@ -1,7 +1,101 @@
 {
-  "generated": "2026-05-01",
+  "generated": "2026-07-14",
   "description": "UI element IDs (data-tour attributes) available for agent highlighting. Pass \"id\" to highlight_element and the route key to navigate_to. \"global\" elements are present on all pages.",
   "routes": {
+    "/applications": {
+      "title": "Applications",
+      "elements": [
+        {
+          "id": "addons-card",
+          "label": "Addons Card",
+          "elementType": "Card",
+          "file": "client/src/app/applications/[id]/_components/addons-card.tsx"
+        },
+        {
+          "id": "connect-card",
+          "label": "Connect Card",
+          "elementType": "Card",
+          "file": "client/src/app/applications/[id]/_components/connect-card.tsx"
+        },
+        {
+          "id": "connected-networks-card",
+          "label": "Connected Networks Card",
+          "elementType": "Card",
+          "file": "client/src/app/applications/[id]/_components/connected-networks-card.tsx"
+        },
+        {
+          "id": "applications-add-button",
+          "label": "Applications Add Button",
+          "elementType": "Button",
+          "file": "client/src/app/applications/page.tsx"
+        },
+        {
+          "id": "applications-grid",
+          "label": "Applications Grid",
+          "elementType": "div",
+          "file": "client/src/app/applications/page.tsx"
+        },
+        {
+          "id": "claude-shell-preset-tile",
+          "label": "Claude Shell Preset Tile",
+          "elementType": "Card",
+          "file": "client/src/app/applications/presets-section.tsx"
+        }
+      ]
+    },
+    "/applications/new/claude-shell": {
+      "title": "/applications/new/claude-shell",
+      "elements": [
+        {
+          "id": "claude-shell-back-button",
+          "label": "Claude Shell Back Button",
+          "elementType": "Button",
+          "file": "client/src/app/applications/new/claude-shell/page.tsx"
+        },
+        {
+          "id": "claude-shell-form",
+          "label": "Claude Shell Form",
+          "elementType": "form",
+          "file": "client/src/app/applications/new/claude-shell/page.tsx"
+        },
+        {
+          "id": "claude-shell-name-input",
+          "label": "Claude Shell Name Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/applications/new/claude-shell/page.tsx"
+        },
+        {
+          "id": "claude-shell-environment-select",
+          "label": "Claude Shell Environment Select",
+          "elementType": "FormItem",
+          "file": "client/src/app/applications/new/claude-shell/page.tsx"
+        },
+        {
+          "id": "claude-shell-git-repo-input",
+          "label": "Claude Shell Git Repo Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/applications/new/claude-shell/page.tsx"
+        },
+        {
+          "id": "claude-shell-deploy-key-input",
+          "label": "Claude Shell Deploy Key Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/applications/new/claude-shell/page.tsx"
+        },
+        {
+          "id": "claude-shell-extra-tags-input",
+          "label": "Claude Shell Extra Tags Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/applications/new/claude-shell/page.tsx"
+        },
+        {
+          "id": "claude-shell-create-button",
+          "label": "Claude Shell Create Button",
+          "elementType": "Button",
+          "file": "client/src/app/applications/new/claude-shell/page.tsx"
+        }
+      ]
+    },
     "/applications/new": {
       "title": "/applications/new",
       "elements": [
@@ -28,23 +122,6 @@
           "label": "New App Create Button",
           "elementType": "Button",
           "file": "client/src/app/applications/new/page.tsx"
-        }
-      ]
-    },
-    "/applications": {
-      "title": "Applications",
-      "elements": [
-        {
-          "id": "applications-add-button",
-          "label": "Applications Add Button",
-          "elementType": "Button",
-          "file": "client/src/app/applications/page.tsx"
-        },
-        {
-          "id": "applications-grid",
-          "label": "Applications Grid",
-          "elementType": "div",
-          "file": "client/src/app/applications/page.tsx"
         }
       ]
     },
@@ -128,6 +205,35 @@
         }
       ]
     },
+    "/connectivity-tailscale": {
+      "title": "Tailscale",
+      "elements": [
+        {
+          "id": "tailscale-settings-form",
+          "label": "Tailscale Settings Form",
+          "elementType": "form",
+          "file": "client/src/app/connectivity/tailscale/page.tsx"
+        },
+        {
+          "id": "tailscale-client-id-input",
+          "label": "Tailscale Client Id Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/connectivity/tailscale/page.tsx"
+        },
+        {
+          "id": "tailscale-client-secret-input",
+          "label": "Tailscale Client Secret Input",
+          "elementType": "FormItem",
+          "file": "client/src/app/connectivity/tailscale/page.tsx"
+        },
+        {
+          "id": "tailscale-validate-button",
+          "label": "Tailscale Validate Button",
+          "elementType": "Button",
+          "file": "client/src/app/connectivity/tailscale/page.tsx"
+        }
+      ]
+    },
     "/connectivity-storage": {
       "title": "Storage",
       "elements": [
@@ -171,6 +277,24 @@
           "label": "Containers Table",
           "elementType": "div",
           "file": "client/src/app/containers/ContainerDashboard.tsx"
+        },
+        {
+          "id": "network-gc-button",
+          "label": "Network Gc Button",
+          "elementType": "Button",
+          "file": "client/src/app/containers/ManagedNetworksList.tsx"
+        },
+        {
+          "id": "networks-sub-tabs",
+          "label": "Networks Sub Tabs",
+          "elementType": "Tabs",
+          "file": "client/src/app/containers/NetworksTabContent.tsx"
+        },
+        {
+          "id": "container-networks-card",
+          "label": "Container Networks Card",
+          "elementType": "Card",
+          "file": "client/src/app/containers/[id]/_components/container-networks-card.tsx"
         },
         {
           "id": "containers-tabs",
@@ -291,6 +415,89 @@
           "label": "Tls Acme Email",
           "elementType": "div",
           "file": "client/src/app/settings/tls/page.tsx"
+        }
+      ]
+    },
+    "/stacks": {
+      "title": "Stacks",
+      "elements": [
+        {
+          "id": "stack-detail-header",
+          "label": "Stack Detail Header",
+          "elementType": "div",
+          "file": "client/src/app/stacks/[stackId]/page.tsx"
+        },
+        {
+          "id": "stack-detail-stop-button",
+          "label": "Stack Detail Stop Button",
+          "elementType": "Button",
+          "file": "client/src/app/stacks/[stackId]/page.tsx"
+        },
+        {
+          "id": "stack-detail-plan",
+          "label": "Stack Detail Plan",
+          "elementType": "div",
+          "file": "client/src/app/stacks/[stackId]/page.tsx"
+        },
+        {
+          "id": "stack-detail-history",
+          "label": "Stack Detail History",
+          "elementType": "div",
+          "file": "client/src/app/stacks/[stackId]/page.tsx"
+        },
+        {
+          "id": "stacks-page-header",
+          "label": "Stacks Page Header",
+          "elementType": "div",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-refresh-button",
+          "label": "Stacks Refresh Button",
+          "elementType": "Button",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-filters",
+          "label": "Stacks Filters",
+          "elementType": "div",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-search-input",
+          "label": "Stacks Search Input",
+          "elementType": "Input",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-scope-filter",
+          "label": "Stacks Scope Filter",
+          "elementType": "SelectTrigger",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-source-filter",
+          "label": "Stacks Source Filter",
+          "elementType": "SelectTrigger",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-status-filter",
+          "label": "Stacks Status Filter",
+          "elementType": "SelectTrigger",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-needs-attention-toggle",
+          "label": "Stacks Needs Attention Toggle",
+          "elementType": "Switch",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-table",
+          "label": "Stacks Table",
+          "elementType": "Table",
+          "file": "client/src/app/stacks/page.tsx"
         }
       ]
     },
@@ -431,6 +638,12 @@
   },
   "global": [
     {
+      "id": "connect-endpoint-shell-ssh",
+      "label": "Connect Endpoint Shell Ssh",
+      "elementType": "typeof",
+      "file": "client/src/__tests__/connect-card-claude-shell.test.tsx"
+    },
+    {
       "id": "agent-chat-fab",
       "label": "Agent Chat Fab",
       "elementType": "div",
@@ -467,6 +680,18 @@
       "file": "client/src/components/egress/egress-traffic-feed.tsx"
     },
     {
+      "id": "managed-network-reconcile-button",
+      "label": "Managed Network Reconcile Button",
+      "elementType": "Button",
+      "file": "client/src/components/networks/managed-network-detail-sheet.tsx"
+    },
+    {
+      "id": "managed-network-enforce-toggle",
+      "label": "Managed Network Enforce Toggle",
+      "elementType": "Switch",
+      "file": "client/src/components/networks/managed-network-detail-sheet.tsx"
+    },
+    {
       "id": "header-backup-health",
       "label": "Header Backup Health",
       "elementType": "Link",
@@ -489,6 +714,102 @@
       "label": "Header Connectivity",
       "elementType": "div",
       "file": "client/src/components/site-header.tsx"
+    },
+    {
+      "id": "install-template-dialog",
+      "label": "Install Template Dialog",
+      "elementType": "DialogContent",
+      "file": "client/src/components/stack-templates/instantiate-template-dialog.tsx"
+    },
+    {
+      "id": "install-template-name-input",
+      "label": "Install Template Name Input",
+      "elementType": "Input",
+      "file": "client/src/components/stack-templates/instantiate-template-dialog.tsx"
+    },
+    {
+      "id": "install-template-environment-select",
+      "label": "Install Template Environment Select",
+      "elementType": "SelectTrigger",
+      "file": "client/src/components/stack-templates/instantiate-template-dialog.tsx"
+    },
+    {
+      "id": "install-template-parameters",
+      "label": "Install Template Parameters",
+      "elementType": "div",
+      "file": "client/src/components/stack-templates/instantiate-template-dialog.tsx"
+    },
+    {
+      "id": "install-template-inputs",
+      "label": "Install Template Inputs",
+      "elementType": "div",
+      "file": "client/src/components/stack-templates/instantiate-template-dialog.tsx"
+    },
+    {
+      "id": "install-template-confirm",
+      "label": "Install Template Confirm",
+      "elementType": "Button",
+      "file": "client/src/components/stack-templates/instantiate-template-dialog.tsx"
+    },
+    {
+      "id": "template-version-diff",
+      "label": "Template Version Diff",
+      "elementType": "p",
+      "file": "client/src/components/stack-templates/template-version-diff.tsx"
+    },
+    {
+      "id": "rotate-inputs-dialog",
+      "label": "Rotate Inputs Dialog",
+      "elementType": "DialogContent",
+      "file": "client/src/components/stacks/RotateInputsDialog.tsx"
+    },
+    {
+      "id": "rotate-inputs-fields",
+      "label": "Rotate Inputs Fields",
+      "elementType": "div",
+      "file": "client/src/components/stacks/RotateInputsDialog.tsx"
+    },
+    {
+      "id": "rotate-inputs-confirm",
+      "label": "Rotate Inputs Confirm",
+      "elementType": "Button",
+      "file": "client/src/components/stacks/RotateInputsDialog.tsx"
+    },
+    {
+      "id": "stack-parameters-dialog",
+      "label": "Stack Parameters Dialog",
+      "elementType": "DialogContent",
+      "file": "client/src/components/stacks/StackParametersDialog.tsx"
+    },
+    {
+      "id": "stack-parameters-fields",
+      "label": "Stack Parameters Fields",
+      "elementType": "div",
+      "file": "client/src/components/stacks/StackParametersDialog.tsx"
+    },
+    {
+      "id": "stack-parameters-save-deploy",
+      "label": "Stack Parameters Save Deploy",
+      "elementType": "Button",
+      "file": "client/src/components/stacks/StackParametersDialog.tsx"
+    },
+    {
+      "id": "stack-update-available-badge",
+      "label": "Stack Update Available Badge",
+      "elementType": "Badge",
+      "file": "client/src/components/stacks/stack-indicators.tsx"
+    },
+    {
+      "id": "stack-needs-attention-badge",
+      "label": "Stack Needs Attention Badge",
+      "elementType": "Badge",
+      "file": "client/src/components/stacks/stack-indicators.tsx"
+    },
+    {
+      "id": "stack-upgrade-button",
+      "label": "Stack Upgrade Button",
+      "elementType": "Button",
+      "file": "client/src/components/stacks/stack-indicators.tsx"
     },
     {
       "id": "storage-provider-picker",

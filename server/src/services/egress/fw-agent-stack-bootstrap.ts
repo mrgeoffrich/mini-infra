@@ -85,12 +85,11 @@ export async function bootstrapFwAgentStack(
     return { stackId: null, applyDispatched: false, reason: "template not synced" };
   }
 
-  // Find an existing stack from this template at host scope. We deliberately
-  // include `removed` rows in the negation so a destroy → re-bootstrap
-  // cycle works the same way the legacy `ensureFwAgent` pattern did
-  // (where `findFwAgent` only returned non-removed containers).
+  // Find an existing stack from this template at host scope. A destroy
+  // hard-deletes the stack row, so a destroy → re-bootstrap cycle simply
+  // finds nothing here and re-instantiates the stack.
   const existing = await prisma.stack.findFirst({
-    where: { templateId: template.id, environmentId: null, status: { not: "removed" } },
+    where: { templateId: template.id, environmentId: null },
     select: { id: true },
   });
 

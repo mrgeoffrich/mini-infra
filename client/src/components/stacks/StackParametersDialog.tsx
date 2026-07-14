@@ -91,7 +91,7 @@ function StackParametersDialogContent({
   }
 
   return (
-    <DialogContent className="sm:max-w-md">
+    <DialogContent className="sm:max-w-md" data-tour="stack-parameters-dialog">
       <DialogHeader>
           <DialogTitle>Configure {stackName}</DialogTitle>
           <DialogDescription>
@@ -102,7 +102,7 @@ function StackParametersDialogContent({
 
         <div className="space-y-4 py-2">
           {parameters.map((param, index) => (
-            <div key={param.name}>
+            <div key={param.name} data-tour="stack-parameters-fields">
               {index > 0 && <Separator className="mb-4" />}
               <div className="space-y-1.5">
                 <Label htmlFor={`param-${param.name}`} className="font-medium">
@@ -153,7 +153,11 @@ function StackParametersDialogContent({
           >
             Cancel
           </Button>
-          <Button onClick={handleConfirm} disabled={isSaving}>
+          <Button
+            onClick={handleConfirm}
+            disabled={isSaving}
+            data-tour="stack-parameters-save-deploy"
+          >
             {isSaving ? (
               <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (

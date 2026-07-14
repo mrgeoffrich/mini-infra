@@ -10,10 +10,17 @@
  * from `healthcheck.startPeriod` (the app's declared boot grace) so
  * slow-booting services can extend it.
  *
- * Unit note: `healthcheck.startPeriod` is stored in **milliseconds** by the
- * application authoring UI (it multiplies the user's seconds input by 1000 —
- * see `client/src/app/applications/new/page.tsx`), which is the surface every
- * StatelessWeb/AdoptedWeb service is created through.
+ * Unit note: `healthcheck.startPeriod` is **milliseconds** — the canonical unit
+ * declared on `StackContainerConfig` in `lib/types/stacks.ts` and shared by
+ * every authoring surface, the built-in templates, and the DB columns.
+ *
+ * This used to say the ms assumption held because the application authoring UI
+ * was "the surface every StatelessWeb/AdoptedWeb service is created through".
+ * That premise was false — this function is also reached by template-authored
+ * services, which stored seconds, so a template's `startPeriod: 30` resolved to
+ * 30 ms, fell under the 90s floor below, and silently clamped to the default.
+ * The slow-boot extension was inert for every template-authored service. The
+ * unit is now pinned at the type, so the assumption holds by declaration.
  *
  * We never shorten below the historical 90s default and cap at 10 minutes:
  * the timeout is an *upper bound* on the wait, not a fixed delay — a healthy

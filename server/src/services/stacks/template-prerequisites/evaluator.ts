@@ -16,8 +16,8 @@ const log = getLogger("stacks", "template-prerequisites-evaluator");
 
 /**
  * Ordering used to test "stack X is at status >= minState". Higher means
- * "more applied". `error` and `removed` are deliberately not in the
- * ordering — they never satisfy any minState.
+ * "more applied". `error` is deliberately not in the ordering — it never
+ * satisfies any minState.
  */
 const STATE_ORDER: Record<string, number> = {
   synced: 4,
@@ -34,7 +34,7 @@ const REQUIRED_STATE_ORDER: Record<MinState, number> = {
 
 function statusMeetsMinState(status: string, minState: MinState): boolean {
   const observed = STATE_ORDER[status];
-  if (observed === undefined) return false; // error / removed / unknown
+  if (observed === undefined) return false; // error / unknown
   return observed >= REQUIRED_STATE_ORDER[minState];
 }
 
@@ -85,14 +85,12 @@ async function evaluateStackRequirement(
     );
   }
 
-  // Fetch all non-removed candidate stacks bound to a template with the
-  // requested name. Source-agnostic: a `stack` requirement just names a
-  // template and a min state — it doesn't care if the candidate is a
-  // system or user template.
+  // Fetch all candidate stacks bound to a template with the requested name.
+  // Source-agnostic: a `stack` requirement just names a template and a min
+  // state — it doesn't care if the candidate is a system or user template.
   const candidates = await prisma.stack.findMany({
     where: {
       template: { name: templateName },
-      status: { not: "removed" },
     },
     select: {
       id: true,

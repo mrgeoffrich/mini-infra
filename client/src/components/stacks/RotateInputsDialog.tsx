@@ -80,12 +80,12 @@ function RotateInputsDialogContent({
   }
 
   return (
-    <DialogContent className="sm:max-w-md">
+    <DialogContent className="sm:max-w-md" data-tour="rotate-inputs-dialog">
       <DialogHeader>
         <DialogTitle>Supply upgrade inputs</DialogTitle>
         <DialogDescription>
           {stackName ? `Upgrading ${stackName} needs ` : "This upgrade needs "}
-          fresh {inputs.length === 1 ? "a value" : "values"} for the following{" "}
+          {inputs.length === 1 ? "a fresh value" : "fresh values"} for the following{" "}
           {inputs.length === 1 ? "input" : "inputs"}, which must be rotated on every
           upgrade.
         </DialogDescription>
@@ -93,7 +93,7 @@ function RotateInputsDialogContent({
 
       <div className="space-y-4 py-2">
         {inputs.map((input, index) => (
-          <div key={input.name}>
+          <div key={input.name} data-tour="rotate-inputs-fields">
             {index > 0 && <Separator className="mb-4" />}
             <div className="space-y-1.5">
               <Label htmlFor={`rotate-input-${input.name}`} className="font-medium">
@@ -119,7 +119,11 @@ function RotateInputsDialogContent({
         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
           Cancel
         </Button>
-        <Button onClick={handleConfirm} disabled={isSaving || !allFilled}>
+        <Button
+          onClick={handleConfirm}
+          disabled={isSaving || !allFilled}
+          data-tour="rotate-inputs-confirm"
+        >
           {isSaving ? (
             <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
           ) : (

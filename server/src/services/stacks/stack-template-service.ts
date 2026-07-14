@@ -493,7 +493,7 @@ export class StackTemplateService {
     const template = this.assertTemplateFound(
       await this.prisma.stackTemplate.findUnique({
         where: { id: templateId },
-        include: { stacks: { select: { id: true, name: true, status: true, removedAt: true } } },
+        include: { stacks: { select: { id: true, name: true, status: true } } },
       }),
       templateId,
     );
@@ -504,9 +504,7 @@ export class StackTemplateService {
     // under it would orphan those resources with no UI path left to find or
     // clean them up. Require the stack to be torn down (POST
     // /stacks/:id/destroy) or never deployed before the template can go.
-    const deployedStack = template.stacks.find(
-      (stack) => stack.removedAt === null && stack.status !== "undeployed",
-    );
+    const deployedStack = template.stacks.find((stack) => stack.status !== "undeployed");
     if (deployedStack) {
       throw new ConflictError(
         ErrorCode.STACK_TEMPLATE_HAS_DEPLOYED_STACK,
@@ -1093,7 +1091,6 @@ export class StackTemplateService {
             where: {
               name: "haproxy",
               environmentId: input.environmentId,
-              status: { not: "removed" },
             },
             include: {
               services: { where: { serviceName: "haproxy" }, take: 1 },

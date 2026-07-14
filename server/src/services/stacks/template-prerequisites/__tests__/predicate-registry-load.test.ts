@@ -85,7 +85,7 @@ describe("template file-loader — predicate registry validation", () => {
           {
             kind: "stack",
             templateName: "vault",
-            minState: "removed", // not in the enum
+            minState: "error", // not in the enum
             scopeMatch: "host",
           },
         ],

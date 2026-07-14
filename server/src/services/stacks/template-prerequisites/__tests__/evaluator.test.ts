@@ -75,9 +75,9 @@ function buildFakePrisma(opts: {
       findMany: async ({
         where,
       }: {
-        where: { template?: { name: string }; status?: { not: string } };
+        where: { template?: { name: string } };
       }) => {
-        // Phase 1 evaluator only filters by template.name + status not removed.
+        // Phase 1 evaluator only filters by template.name.
         const targetName = where.template?.name;
         return opts.stacks
           .filter((s) => s.templateId !== null)
@@ -86,7 +86,6 @@ function buildFakePrisma(opts: {
             // Look up the template scope/name via a parallel array.
             return s.template !== undefined && (s.template as unknown as { name?: string }).name === targetName;
           })
-          .filter((s) => s.status !== "removed")
           .map((s) => ({
             id: s.id,
             status: s.status ?? "synced",

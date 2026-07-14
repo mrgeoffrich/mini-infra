@@ -5,7 +5,7 @@
 import type { NetworkDriftItem } from './docker';
 
 // Status and service type unions (mirror Prisma enums)
-export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
+export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed';
 export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool', 'JobPool'] as const;
 export type StackServiceType = typeof STACK_SERVICE_TYPES[number];
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
@@ -315,11 +315,27 @@ export interface StackContainerConfig {
    */
   networkMode?: 'bridge' | 'host';
   restartPolicy?: typeof RESTART_POLICIES[number];
+  /**
+   * Container healthcheck. **All durations are in milliseconds.**
+   *
+   * This is the canonical unit for the whole stack surface — the authoring UIs,
+   * the built-in template JSONs, the DB columns, and the deploy-wait path all
+   * agree on it. Docker's API wants nanoseconds; that conversion happens in
+   * exactly one place, `healthcheckToDocker()` in
+   * `server/src/services/stacks/healthcheck-config.ts`. Do not convert units
+   * anywhere else.
+   *
+   * `retries` is a count, not a duration.
+   */
   healthcheck?: {
     test: string[];
+    /** Milliseconds between checks. */
     interval: NumOrTemplate;
+    /** Milliseconds before a single check is considered failed. */
     timeout: NumOrTemplate;
+    /** Consecutive failures before the container is marked unhealthy. */
     retries: NumOrTemplate;
+    /** Milliseconds of boot grace before failures start counting. */
     startPeriod: NumOrTemplate;
   };
   logConfig?: {
@@ -559,6 +575,135 @@ export interface StackInfo {
    * was edited since the last NATS apply.
    */
   natsDrift?: NatsDriftInfo | null;
+  /**
+   * What the background status monitor last found wrong with the stack's live
+   * containers. Empty/absent means the last check was clean. Distinct from
+   * `status`: `status` is the coarse lifecycle field, this is the specifics.
+   */
+  runtimeIssues?: StackRuntimeIssue[] | null;
+  /**
+   * Server-computed "does this stack need a human?" rollup. Folds status, live
+   * runtime issues, NATS drift and template-update-available into one signal so
+   * every consumer — the UI, the agent sidecar, API-key integrations — gets the
+   * same answer instead of each reimplementing it.
+   */
+  needsAttention?: StackAttention;
+}
+
+/** A specific thing the status monitor found wrong with a stack's live containers. */
+export type StackRuntimeIssue =
+  /** The service has no container at all. */
+  | { kind: 'missing'; serviceName: string }
+  /** The container exists but is not running — it crashed, or was stopped. */
+  | { kind: 'not-running'; serviceName: string; status: string }
+  /** The container is running but is not what we applied (replaced/edited out of band). */
+  | { kind: 'hash-mismatch'; serviceName: string };
+
+/**
+ * How loudly a stack is asking for a human.
+ *
+ * - `critical` — the app is down (a service is not running or has no container),
+ *   or the last apply failed.
+ * - `warning`  — something diverged but the app is still up (drift, unapplied
+ *   edits, NATS drift).
+ * - `info`     — an opportunity, not a problem (a newer template version).
+ * - `none`     — nothing to do.
+ */
+export type StackAttentionLevel = 'none' | 'info' | 'warning' | 'critical';
+
+export interface StackAttention {
+  level: StackAttentionLevel;
+  /** True when the stack has one or more unresolved conditions. */
+  needsAttention: boolean;
+  /** Human-readable reasons, each phrased as "what's wrong → what to do". */
+  reasons: string[];
+  /** True when a newer template version is available (a softer signal). */
+  updateAvailable: boolean;
+}
+
+/** The subset of a stack `computeStackAttention` reads. */
+export interface StackAttentionInput {
+  status?: StackStatus;
+  lastFailureReason?: string | null;
+  runtimeIssues?: StackRuntimeIssue[] | null;
+  natsDrift?: { drifted?: boolean } | null;
+  templateUpdateAvailable?: boolean;
+}
+
+function describeRuntimeIssue(issue: StackRuntimeIssue): string {
+  switch (issue.kind) {
+    case 'missing':
+      return `Service '${issue.serviceName}' has no container — run Apply to recreate it.`;
+    case 'not-running':
+      return `Service '${issue.serviceName}' is not running (${issue.status}) — run Apply to restart it.`;
+    case 'hash-mismatch':
+      return `Service '${issue.serviceName}' no longer matches the applied definition — run Apply to reconcile.`;
+  }
+}
+
+/**
+ * Roll every "needs attention" signal for a stack into one shape.
+ *
+ * This is the single implementation: the server calls it inside
+ * `serializeStack()` so the rollup ships on the API (an agent or API-key caller
+ * should not have to reimplement it), and the client prefers that server value,
+ * falling back to computing locally.
+ *
+ * The important honesty property: a stack whose service has died reports
+ * `critical` with the service named, not the generic drift copy. `status` alone
+ * cannot express that — it is a coarse lifecycle field, and a crashed container
+ * lands there as `drifted`, which undersells "your app is down".
+ */
+export function computeStackAttention(stack: StackAttentionInput): StackAttention {
+  const reasons: string[] = [];
+  let level: StackAttentionLevel = 'none';
+
+  const raise = (next: StackAttentionLevel) => {
+    const order: StackAttentionLevel[] = ['none', 'info', 'warning', 'critical'];
+    if (order.indexOf(next) > order.indexOf(level)) level = next;
+  };
+
+  if (stack.status === 'error') {
+    reasons.push(
+      stack.lastFailureReason
+        ? `Last apply failed: ${stack.lastFailureReason}`
+        : 'The last apply failed — retry Apply.',
+    );
+    raise('critical');
+  } else if (stack.status === 'pending') {
+    reasons.push("The definition changed but hasn't been applied — run Apply.");
+    raise('warning');
+  }
+
+  // Specific runtime findings replace the generic `drifted` copy — "api is not
+  // running" is the thing the operator actually needs to know.
+  const issues = stack.runtimeIssues ?? [];
+  for (const issue of issues) {
+    reasons.push(describeRuntimeIssue(issue));
+    // A dead or missing container means the app is down. A hash mismatch means
+    // it is up, but not running what we think it is.
+    raise(issue.kind === 'hash-mismatch' ? 'warning' : 'critical');
+  }
+
+  // Only fall back to the generic message when the monitor has no specifics —
+  // e.g. drift a human found by opening the plan, which the cheap check cannot see.
+  if (stack.status === 'drifted' && issues.length === 0) {
+    reasons.push('Live containers have drifted from the definition — run Apply to reconcile.');
+    raise('warning');
+  }
+
+  if (stack.natsDrift?.drifted) {
+    reasons.push('NATS configuration has drifted from the last applied snapshot.');
+    raise('warning');
+  }
+
+  const updateAvailable = stack.templateUpdateAvailable === true;
+  if (updateAvailable) {
+    reasons.push('A newer template version is available — Upgrade & deploy to adopt it.');
+    raise('info');
+  }
+
+  return { level, needsAttention: reasons.length > 0, reasons, updateAvailable };
 }
 
 /** Reasons why the NATS section of a stack is out of sync with its last apply. */

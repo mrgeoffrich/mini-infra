@@ -1,7 +1,7 @@
 {
   "name": "nats",
   "displayName": "NATS",
-  "builtinVersion": 1,
+  "builtinVersion": 2,
   "scope": "host",
   "category": "infrastructure",
   "description": "NATS messaging server with JetStream persistence. Reads its config from Vault KV, so the Vault stack must be bootstrapped first.",
@@ -79,10 +79,10 @@
         "joinResourceNetworks": ["nats"],
         "healthcheck": {
           "test": ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"],
-          "interval": 10,
-          "timeout": 3,
+          "interval": 10000,
+          "timeout": 3000,
           "retries": 5,
-          "startPeriod": 10
+          "startPeriod": 10000
         },
         "logConfig": {
           "type": "json-file",
