@@ -1277,6 +1277,12 @@ export class StackTemplateService {
         status: "undeployed",
         templateId: template.id,
         templateVersion: version.version,
+        // Set the FK alongside the version *number*. Until now only the upgrade
+        // path wrote it, so a stack that was installed and never upgraded had a
+        // version number but a null `templateVersionId` — which is every freshly
+        // installed stack. Anything keying off the exact installed version (a
+        // targeted upgrade, promotion between environments) needs the id.
+        templateVersionId: version.id,
         builtinVersion:
           template.source === "system" ? version.version : null,
         parameters:
