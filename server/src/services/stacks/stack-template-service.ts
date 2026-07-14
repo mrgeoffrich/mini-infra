@@ -1495,7 +1495,7 @@ function buildConfigFilesFromDefinition(
  * Build StackServiceDefinition[] from a template version's services and config files.
  * Merges config files back into each service's configFiles array.
  */
-function buildServiceDefinitionsFromVersion(version: {
+export function buildServiceDefinitionsFromVersion(version: {
   services?: Prisma.StackTemplateServiceGetPayload<true>[];
   configFiles?: Prisma.StackTemplateConfigFileGetPayload<true>[];
 }): StackServiceDefinition[] {

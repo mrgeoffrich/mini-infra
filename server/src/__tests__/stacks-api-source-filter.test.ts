@@ -132,10 +132,34 @@ describe('GET /api/stacks - source filtering', () => {
     expect(call.where.OR).toBeUndefined();
   });
 
-  it('excludes user stacks by default when scope=host', async () => {
+  it('returns ALL sources for scope=host when no source filter is passed', async () => {
     mockFindMany.mockResolvedValue([makeStack()]);
 
     await supertest(app).get('/api/stacks?scope=host').expect(200);
+
+    const call = mockFindMany.mock.calls[0][0];
+    expect(call.where.environmentId).toBeNull();
+    // New contract: scoped queries no longer implicitly exclude user stacks.
+    expect(call.where.OR).toBeUndefined();
+    expect(call.where.template).toBeUndefined();
+  });
+
+  it('returns ALL sources for environmentId when no source filter is passed', async () => {
+    mockFindMany.mockResolvedValue([makeStack({ environmentId: 'env-1' })]);
+
+    await supertest(app).get('/api/stacks?environmentId=env-1').expect(200);
+
+    const call = mockFindMany.mock.calls[0][0];
+    expect(call.where.environmentId).toBe('env-1');
+    // New contract: no implicit OR restriction.
+    expect(call.where.OR).toBeUndefined();
+    expect(call.where.template).toBeUndefined();
+  });
+
+  it('scope=host&source=system restricts to system/templateless stacks', async () => {
+    mockFindMany.mockResolvedValue([makeStack()]);
+
+    await supertest(app).get('/api/stacks?scope=host&source=system').expect(200);
 
     const call = mockFindMany.mock.calls[0][0];
     expect(call.where.environmentId).toBeNull();
@@ -145,17 +169,15 @@ describe('GET /api/stacks - source filtering', () => {
     ]);
   });
 
-  it('excludes user stacks by default when environmentId is provided', async () => {
+  it('environmentId&source=user restricts to user (application) stacks', async () => {
     mockFindMany.mockResolvedValue([makeStack({ environmentId: 'env-1' })]);
 
-    await supertest(app).get('/api/stacks?environmentId=env-1').expect(200);
+    await supertest(app).get('/api/stacks?environmentId=env-1&source=user').expect(200);
 
     const call = mockFindMany.mock.calls[0][0];
     expect(call.where.environmentId).toBe('env-1');
-    expect(call.where.OR).toEqual([
-      { template: { source: 'system' } },
-      { templateId: null },
-    ]);
+    expect(call.where.template).toEqual({ source: 'user' });
+    expect(call.where.OR).toBeUndefined();
   });
 
   it('filters to only user stacks when source=user', async () => {
@@ -216,16 +238,18 @@ describe('GET /api/stacks - source filtering', () => {
     expect(call.include.template.select.currentVersion).toEqual({ select: { version: true } });
   });
 
-  it('user stack does not appear in host listing (integration scenario)', async () => {
-    // Simulate: prisma returns nothing because the where clause filters out user stacks
+  it('host listing with source=system excludes user stacks (integration scenario)', async () => {
+    // Simulate: prisma returns nothing because the explicit source=system where
+    // clause filters out user stacks.
     mockFindMany.mockResolvedValue([]);
 
-    const res = await supertest(app).get('/api/stacks?scope=host').expect(200);
+    const res = await supertest(app)
+      .get('/api/stacks?scope=host&source=system')
+      .expect(200);
 
     expect(res.body.success).toBe(true);
     expect(res.body.data).toHaveLength(0);
 
-    // Verify the where clause would exclude user-template stacks
     const call = mockFindMany.mock.calls[0][0];
     expect(call.where).toEqual({
       environmentId: null,

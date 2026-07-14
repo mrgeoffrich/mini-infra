@@ -344,6 +344,7 @@ export const ALL_API_ROUTES: readonly ApiRouteEntry[] = [
   { method: "GET", path: "/api/stacks/:stackId/status" },
   { method: "POST", path: "/api/stacks/:stackId/stop" },
   { method: "POST", path: "/api/stacks/:stackId/update" },
+  { method: "POST", path: "/api/stacks/:stackId/upgrade" },
   { method: "GET", path: "/api/stacks/:stackId/validate" },
   { method: "GET", path: "/api/stacks/eligible-containers" },
   { method: "GET", path: "/api/storage" },

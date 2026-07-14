@@ -40,6 +40,26 @@ router.get(
     const reconciler = new StackReconciler(dockerExecutor, prisma, undefined, resourceReconciler);
     const plan = await reconciler.plan(stackId);
 
+    // Persist `drifted` as a real status via post-plan marking: a currently
+    // `synced` stack whose plan shows changes becomes `drifted`; a `drifted`
+    // stack whose plan is now clean flips back to `synced`. A successful apply
+    // still writes `synced` on its own path. This is on-demand only — there is
+    // no background drift scanner.
+    try {
+      const current = await prisma.stack.findUnique({
+        where: { id: stackId },
+        select: { status: true },
+      });
+      if (current?.status === 'synced' && plan.hasChanges) {
+        await prisma.stack.update({ where: { id: stackId }, data: { status: 'drifted' } });
+      } else if (current?.status === 'drifted' && !plan.hasChanges) {
+        await prisma.stack.update({ where: { id: stackId }, data: { status: 'synced' } });
+      }
+    } catch {
+      // Non-fatal — plan display must not fail if the status write races with
+      // another operation.
+    }
+
     res.json({ success: true, data: plan });
   }),
 );

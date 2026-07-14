@@ -528,6 +528,10 @@ export interface StackInfo {
   builtinVersion: number | null;
   templateId: string | null;
   templateVersion: number | null;
+  /** 'system' (infrastructure) or 'user' (application); null for templateless/manual stacks. Present when the query includes the template relation. */
+  templateSource?: 'system' | 'user' | null;
+  /** The template's current published version number — for showing installed-vs-latest. Present when the query includes the template relation. */
+  templateCurrentVersion?: number | null;
   templateUpdateAvailable?: boolean;
   parameters: StackParameterDefinition[];
   parameterValues: Record<string, StackParameterValue>;

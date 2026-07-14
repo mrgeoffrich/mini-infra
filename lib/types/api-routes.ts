@@ -755,6 +755,8 @@ export const ApiRoute = {
     stop: (stackId: string): string => `${ApiBase.stacks}/${stackId}/stop`,
     /** POST /api/stacks/:stackId/update */
     update: (stackId: string): string => `${ApiBase.stacks}/${stackId}/update`,
+    /** POST /api/stacks/:stackId/upgrade — re-materialize from the template's current version */
+    upgrade: (stackId: string): string => `${ApiBase.stacks}/${stackId}/upgrade`,
     /** GET /api/stacks/:stackId/validate */
     validate: (stackId: string): string => `${ApiBase.stacks}/${stackId}/validate`,
   },
