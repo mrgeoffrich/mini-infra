@@ -15,6 +15,7 @@ import type {
   FieldDiff,
   ApplyResult,
   DestroyResult,
+  DeploymentPhaseEvent,
   ServiceApplyResult,
   ResourceResult,
   ApplyStackRequest,
@@ -511,6 +512,12 @@ export interface StackApplyProgressState {
   actions: Array<{ serviceName: string; action: string }>;
   forcePull: boolean;
   finalResult: (ApplyResult & { error?: string; postApply?: { success: boolean; errors?: string[] } }) | null;
+  /**
+   * Current blue-green phase per StatelessWeb service, keyed by service name.
+   * Only these services run the deployment state machine — a Stateful service is
+   * a stop-and-recreate with no phases, and will never appear here.
+   */
+  phases: Record<string, DeploymentPhaseEvent>;
 }
 
 const INITIAL_APPLY_STATE: StackApplyProgressState = {
@@ -520,6 +527,7 @@ const INITIAL_APPLY_STATE: StackApplyProgressState = {
   actions: [],
   forcePull: false,
   finalResult: null,
+  phases: {},
 };
 
 /**
@@ -546,7 +554,22 @@ export function useStackApplyProgress(stackId: string) {
         actions: data.actions,
         forcePull: !!data.forcePull,
         finalResult: null,
+        phases: {},
       });
+    },
+    !!stackId,
+  );
+
+  // Blue-green deploy phase for one StatelessWeb service. These arrive between
+  // apply-started and that service's result — the long silence they fill.
+  useSocketEvent(
+    ServerEvent.STACK_DEPLOYMENT_PHASE,
+    (data) => {
+      if (data.stackId !== stackId) return;
+      setApplyState((prev) => ({
+        ...prev,
+        phases: { ...prev.phases, [data.serviceName]: data },
+      }));
     },
     !!stackId,
   );

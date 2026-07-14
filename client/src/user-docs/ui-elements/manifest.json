@@ -770,6 +770,12 @@
       "file": "client/src/components/stacks/ChangeVersionDialog.tsx"
     },
     {
+      "id": "stack-deployment-phase",
+      "label": "Stack Deployment Phase",
+      "elementType": "div",
+      "file": "client/src/components/stacks/DeploymentPhaseTrail.tsx"
+    },
+    {
       "id": "rotate-inputs-dialog",
       "label": "Rotate Inputs Dialog",
       "elementType": "DialogContent",

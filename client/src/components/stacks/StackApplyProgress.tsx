@@ -5,7 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
-import type { ApplyResult, ServiceApplyResult, ResourceResult } from "@mini-infra/types";
+import type {
+  ApplyResult,
+  ServiceApplyResult,
+  ResourceResult,
+  DeploymentPhaseEvent,
+} from "@mini-infra/types";
+import { DeploymentPhaseTrail } from "@/components/stacks/DeploymentPhaseTrail";
 
 /** Unified result from either a service or resource action */
 type AnyResult = ServiceApplyResult | ResourceResult;
@@ -29,6 +35,11 @@ interface StackApplyProgressProps {
   isApplying?: boolean;
   /** Whether this is a force-pull redeploy */
   forcePull?: boolean;
+  /**
+   * Live mode: current blue-green phase per StatelessWeb service. Absent for
+   * Stateful services, which are a stop-and-recreate with no phases to report.
+   */
+  phases?: Record<string, DeploymentPhaseEvent>;
   /** Completed mode: final result */
   result?: ApplyResult & { error?: string };
   className?: string;
@@ -46,6 +57,7 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
   totalActions,
   isApplying,
   forcePull,
+  phases = {},
   result,
   className,
 }: StackApplyProgressProps) {
@@ -210,6 +222,7 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
       <CardContent className="space-y-0">
         {actions.map((action, index) => {
           const completed = completedSet.get(action.serviceName);
+          const phase = phases[action.serviceName];
           const isNext =
             !completed &&
             isApplying &&
@@ -254,6 +267,16 @@ export const StackApplyProgress = React.memo(function StackApplyProgress({
                   </span>
                 )}
               </div>
+
+              {/* Blue-green phase for a StatelessWeb service still in flight.
+                  This is the whole point of the phase events: a zero-downtime
+                  deploy can spend minutes between "started" and "done", and
+                  before this the row just span with no indication of whether it
+                  was pulling, health-checking, or draining. Stateful services
+                  never emit phases and render exactly as they did. */}
+              {!completed && phase && (
+                <DeploymentPhaseTrail phase={phase} className="mb-3 ml-6" />
+              )}
 
               {completed?.error && (
                 <Alert variant="destructive" className="mb-3">

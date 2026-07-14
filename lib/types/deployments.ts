@@ -1,6 +1,74 @@
 import type { OperationStep } from './operations';
 
 // ====================
+// Blue-Green Deployment Phases
+// ====================
+
+/**
+ * The phases a zero-downtime (blue-green) StatelessWeb deploy moves through.
+ *
+ * A blue-green update can run for minutes — deploying the green containers,
+ * waiting for them to become healthy, cutting traffic over, draining blue — but
+ * none of it was visible: the state machine only logged, so the UI showed one
+ * spinning row labelled `update <service>` for the whole run. These are the
+ * phases that machine passes through, named for humans.
+ */
+export type DeploymentPhase =
+  | 'deploying-green'
+  | 'waiting-green-ready'
+  | 'registering-green'
+  | 'health-check'
+  | 'switching-traffic'
+  | 'draining-blue'
+  | 'removing-blue'
+  | 'rolling-back'
+  | 'completed'
+  | 'failed';
+
+/** Ordered happy path. `rolling-back`/`failed` are off-path and not included. */
+export const DEPLOYMENT_PHASE_SEQUENCE: DeploymentPhase[] = [
+  'deploying-green',
+  'waiting-green-ready',
+  'registering-green',
+  'health-check',
+  'switching-traffic',
+  'draining-blue',
+  'removing-blue',
+  'completed',
+];
+
+export const DEPLOYMENT_PHASE_LABELS: Record<DeploymentPhase, string> = {
+  'deploying-green': 'Deploying new containers',
+  'waiting-green-ready': 'Waiting for new containers',
+  'registering-green': 'Registering with load balancer',
+  'health-check': 'Health checking',
+  'switching-traffic': 'Switching traffic over',
+  'draining-blue': 'Draining old containers',
+  'removing-blue': 'Removing old containers',
+  'rolling-back': 'Rolling back',
+  completed: 'Done',
+  failed: 'Failed',
+};
+
+/**
+ * One phase transition of one service's blue-green deploy.
+ *
+ * Keyed by `stackId` + `serviceName` rather than the machine's internal
+ * `deploymentId` so the client can attach it to the apply it already has open
+ * (the task tracker keys apply tasks on `stackId`), without needing to have
+ * observed a deployment-started event first.
+ */
+export interface DeploymentPhaseEvent {
+  stackId: string;
+  serviceName: string;
+  phase: DeploymentPhase;
+  /** Human-readable label for `phase` — see DEPLOYMENT_PHASE_LABELS. */
+  label: string;
+  /** True once the deploy has passed the point of no return (traffic is on green). */
+  cutOver: boolean;
+}
+
+// ====================
 // Container Primitive Types (shared by stacks)
 // ====================
 
