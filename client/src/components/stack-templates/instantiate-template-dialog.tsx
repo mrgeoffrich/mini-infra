@@ -129,7 +129,7 @@ function InstantiateTemplateDialogContent({
   }
 
   return (
-    <DialogContent className="sm:max-w-md">
+    <DialogContent className="sm:max-w-md" data-tour="install-template-dialog">
       <DialogHeader>
         <DialogTitle>Install {template.displayName}</DialogTitle>
         <DialogDescription>
@@ -146,6 +146,7 @@ function InstantiateTemplateDialogContent({
             onChange={(e) => setName(e.target.value)}
             placeholder={template.name}
             disabled={saving}
+            data-tour="install-template-name-input"
           />
         </div>
 
@@ -159,7 +160,7 @@ function InstantiateTemplateDialogContent({
               onValueChange={setEnvironmentId}
               disabled={saving}
             >
-              <SelectTrigger id="instantiate-env">
+              <SelectTrigger id="instantiate-env" data-tour="install-template-environment-select">
                 <SelectValue placeholder="Select an environment" />
               </SelectTrigger>
               <SelectContent>
@@ -177,7 +178,11 @@ function InstantiateTemplateDialogContent({
           <>
             <Separator />
             {parameters.map((param) => (
-              <div key={param.name} className="space-y-1.5">
+              <div
+                key={param.name}
+                className="space-y-1.5"
+                data-tour="install-template-parameters"
+              >
                 <Label htmlFor={`instantiate-param-${param.name}`} className="font-medium">
                   {param.name}
                 </Label>
@@ -215,7 +220,11 @@ function InstantiateTemplateDialogContent({
           <>
             <Separator />
             {inputs.map((input) => (
-              <div key={input.name} className="space-y-1.5">
+              <div
+                key={input.name}
+                className="space-y-1.5"
+                data-tour="install-template-inputs"
+              >
                 <Label htmlFor={`instantiate-input-${input.name}`} className="font-medium">
                   {input.name}
                 </Label>
@@ -242,7 +251,11 @@ function InstantiateTemplateDialogContent({
         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
           Cancel
         </Button>
-        <Button onClick={handleInstall} disabled={saving || missingEnv || missingInputs}>
+        <Button
+          onClick={handleInstall}
+          disabled={saving || missingEnv || missingInputs}
+          data-tour="install-template-confirm"
+        >
           {saving ? (
             <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
           ) : (

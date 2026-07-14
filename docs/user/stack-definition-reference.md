@@ -362,14 +362,17 @@ Runtime notes:
 | Field | Required | Meaning | Constraints |
 | --- | --- | --- | --- |
 | `test` | Yes | Docker healthcheck command array. | Array of strings. |
-| `interval` | Yes | Interval between checks. | Integer `>= 1` or exactly `{{params.some_name}}`. |
-| `timeout` | Yes | Timeout per check. | Integer `>= 1` or exactly `{{params.some_name}}`. |
-| `retries` | Yes | Failed checks before unhealthy. | Integer `>= 1` or exactly `{{params.some_name}}`. |
-| `startPeriod` | Yes | Grace period before failures count. | Integer `>= 0` or exactly `{{params.some_name}}`. |
+| `interval` | Yes | Interval between checks, in **milliseconds**. | Integer `>= 1` or exactly `{{params.some_name}}`. |
+| `timeout` | Yes | Timeout per check, in **milliseconds**. | Integer `>= 1` or exactly `{{params.some_name}}`. |
+| `retries` | Yes | Failed checks before unhealthy. A **count**, never scaled. | Integer `>= 1` or exactly `{{params.some_name}}`. |
+| `startPeriod` | Yes | Grace period before failures count, in **milliseconds**. | Integer `>= 0` or exactly `{{params.some_name}}`. |
 
 Runtime meaning:
 
-- These values are interpreted as seconds, then converted to Docker healthcheck timing.
+- **`interval`, `timeout`, and `startPeriod` are milliseconds.** Mini Infra converts them to Docker's nanoseconds in exactly one place. `retries` is a plain count and is never scaled.
+- A 30-second interval is therefore `30000`, not `30`.
+
+> **Breaking change.** These fields were previously documented and read as *seconds* by file-loaded templates, while the authoring UIs wrote *milliseconds* — the two conventions disagreed and the container-create path applied the wrong one. Milliseconds is now canonical everywhere. **If you author templates via the API or YAML in seconds, multiply by 1000.** Stored values are converted automatically by a one-off boot backfill (see `docs/API-CHANGELOG.md`), but new definitions you write must already be in milliseconds.
 
 ## `services[].containerConfig.logConfig`
 

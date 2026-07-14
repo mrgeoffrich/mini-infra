@@ -1,75 +1,115 @@
 ---
 title: Stack Templates
-description: How to create and manage reusable stack templates for deploying infrastructure in Mini Infra
+description: How to create, version, publish, roll back, and install reusable stack templates in Mini Infra.
 tags:
   - stack-templates
   - infrastructure
   - docker
   - configuration
+  - versioning
 ---
 
 # Stack Templates
 
-Stack templates are reusable blueprints for deploying multi-service infrastructure stacks. They define services, parameters, networks, and volumes in a structured format similar to Docker Compose.
+A **stack template** is a reusable blueprint for a stack: services, parameters, inputs, networks, and volumes, in a structured format similar to Docker Compose. Installing a template creates a [stack](/help/applications/host-stacks); publishing a new version of the template offers every stack built from it an **Upgrade & deploy**.
 
-## Viewing Templates
+Applications are templates too — an [application](/help/applications/application-management) is a user-source template with a friendlier editor in front of it. This page describes the raw template surface.
 
-The Stack Templates page lists all templates with filtering options:
+## Viewing templates
 
-- **Source** --- System (built-in) or User (custom).
-- **Scope** --- Host (host-level infrastructure) or Environment (per-environment).
-- **Include archived** --- Toggle to show or hide archived templates.
+The Stack Templates page lists all templates. Each row shows its source, scope, current published version, and **Used by** — how many stacks were built from it. That count is the one to check before you change anything: publishing a new version puts an **Update available** badge on every one of those stacks.
 
-## Creating a Template
+Filter by:
 
-Click **Create Template** to open the creation dialog. Provide a name and basic metadata, then use the template editor to define services and configuration.
+- **Source** — **System** (built-in, ships with Mini Infra) or **User** (yours).
+- **Scope** — **Host** (host-level infrastructure) or **Environment** (per-environment).
+- **Include archived** — show or hide archived templates.
 
-## Template Editor
+### System templates are read-only
 
-The editor page has a main editing area and a version sidebar:
+System templates — HAProxy, monitoring, Vault, NATS, Postgres, Cloudflare Tunnel — are managed by Mini Infra and updated with each release. The detail page renders them explicitly read-only: no draft, no publish, no rollback. When a release ships a new version of one, the stacks using it show **Update available** and you adopt it with **Upgrade & deploy**.
+
+## Creating a template
+
+Click **Create Template**, give it a name and basic metadata, then define its services and configuration in the editor.
+
+## The template editor
+
+The editor has a main editing area and a **version sidebar**.
 
 ### Services
 
-Define one or more Docker services, each with:
+One or more Docker services, each with an image and tag, container configuration, init commands, dependencies, and routing rules.
 
-- Docker image and tag.
-- Container configuration.
-- Initialization commands.
-- Dependencies between services.
-- Routing rules.
+> **Health check durations are milliseconds.** `interval`, `timeout`, and `startPeriod` are milliseconds; `retries` is a plain count. If you are porting a template that was authored in seconds, multiply by 1000. See `docs/user/stack-definition-reference.md` and `docs/API-CHANGELOG.md` in the repository.
 
 ### Parameters
 
-Define template parameters that act as input variables when the template is instantiated. Each parameter has a name and default value. Parameters allow the same template to be deployed with different configurations.
+Input variables supplied when the template is installed — each with a name, type, description, and default. Parameters let one template serve many configurations.
 
-### Networks and Volumes
+### Inputs
 
-Configure Docker networks and persistent volumes that the template's services use.
+Values the operator must supply, held encrypted at rest and never returned by the API — passwords, API tokens, keys.
 
-### Cross-Stack Prerequisites
+An input can be marked **rotate on upgrade**. When it is, every upgrade to a version declaring it must supply a *fresh* value: Mini Infra opens a **Supply upgrade inputs** dialog and refuses the upgrade until the field is filled. Use it for credentials that must not be carried across versions.
 
-Templates can declare other stacks (or system conditions) that must be in place before this stack can be applied. Two kinds:
+### Networks and volumes
 
-- **Stack prerequisite** --- a stack from a named template must exist with a minimum status (e.g. `synced`). The match scope can be `host`, `environment`, or `same-environment` (the same env as the applying stack).
-- **Predicate prerequisite** --- a built-in named check, e.g. `vault-bootstrapped` (true when Vault has been bootstrapped and the operator passphrase is unlocked).
+Docker networks and persistent volumes the template's services use.
+
+### Cross-stack prerequisites
+
+Templates can declare conditions that must hold before a stack can be applied. Two kinds:
+
+- **Stack prerequisite** — a stack from a named template must exist with a minimum status (e.g. `synced`). The match scope can be `host`, `environment`, or `same-environment` (the same environment as the applying stack).
+- **Predicate prerequisite** — a built-in named check, e.g. `vault-bootstrapped` (true when Vault has been bootstrapped and the operator passphrase is unlocked).
 
 Behaviour:
 
-- **Instantiating a template is allowed even if prerequisites aren't met** --- the dialog shows a soft-warn so you can stage stacks ahead of time.
-- **Applying a stack is blocked** until every prerequisite passes. The stack detail page renders a banner explaining each unmet requirement, with deep-link CTAs to fix it (deploy a missing stack, apply a pending one, bootstrap Vault, etc.).
+- **Installing is allowed even if prerequisites aren't met** — the dialog soft-warns, so you can stage stacks ahead of time.
+- **Applying is blocked** until every prerequisite passes. The stack detail page renders a banner explaining each unmet requirement, with deep-link CTAs to fix it (deploy a missing stack, apply a pending one, bootstrap Vault).
 
 ## Versioning
 
-Templates use a draft-and-publish workflow:
+Templates use a draft-and-publish workflow. Published versions are immutable; the draft is the only mutable thing.
 
-1. **Create Draft** --- Start editing from the current published version.
-2. **Edit** --- Changes are saved automatically as you work.
-3. **Publish Draft** --- Finalize the draft as a new version with optional release notes.
-4. **Discard Draft** --- Abandon the draft and return to the last published version.
+1. **Create Draft** — starts an editable draft from the current published version. The sidebar shows it tagged `editing`.
+2. **Edit** — changes save to the draft as you work. Nothing you do here affects a running stack.
+3. **Publish Draft** — finalises the draft as a new immutable version, with optional release notes.
+4. **Discard Draft** — abandons the draft and returns to the last published version.
 
-The version sidebar shows the full version history. You can select any version to view it in read-only mode.
+The version sidebar lists the full history. The current published version is tagged `current`. Select any version to view it read-only, or **Create Draft from v*N*** to start editing from an older one.
 
-## Template Scopes
+### Reviewing the diff before you publish
 
-- **Host** --- Templates scoped to the host level, used for infrastructure stacks (HAProxy, monitoring, etc.).
-- **Environment** --- Templates scoped to a specific environment, used for application stacks.
+The publish dialog shows a **diff of the draft against the current published version** before you commit — services added, services removed, and field-level changes on each changed service, plus template-level configuration changes. Read it. It is the last cheap moment to catch an accidental change, because publishing immediately flags every stack using this template as having an update available.
+
+You can also diff any two versions from the detail page by selecting a version — it compares against the previous one.
+
+### Rolling back
+
+Select an older published version in the sidebar and click **Make current**. That version becomes the template's current published version.
+
+Rollback does not touch any running stack. It changes what "current" means, so stacks running a *newer* version will now show as having an update available pointing *back* at the older one. To actually revert a stack, roll the template back and then **Upgrade & deploy** the stack.
+
+## Installing a template
+
+Click **Install** on a template with a published version. The dialog collects:
+
+- **Name** (optional) — defaults to the template's name.
+- **Environment** — required for environment-scoped templates. Only environments whose network type matches the template are offered.
+- **Parameters** — pre-filled with their defaults; override any of them.
+- **Inputs** — required values, masked if the input is marked sensitive.
+
+**Install** creates the stack and takes you to its detail page. It does **not** apply it — the stack lands **Undeployed**, so you can review its plan first, then Apply. If the template's prerequisites aren't met yet you'll get a soft warning, but the install still succeeds; the Apply is what's gated.
+
+## Archiving and deleting
+
+**Archive** hides a template from the default list without destroying it — the right move for a template you've stopped using but whose stacks may still exist. Unarchive from the same menu.
+
+**Delete** removes it permanently. Templates still in use by a stack can't be deleted — archive them instead.
+
+## Template scopes
+
+- **Host** — host-level infrastructure stacks (HAProxy, monitoring, and friends).
+- **Environment** — application stacks that live inside a named environment.

@@ -1,100 +1,139 @@
 ---
 title: Managing Applications
-description: How to create, deploy, update, and manage applications in Mini Infra
+description: How to create, deploy, configure, upgrade, stop, and remove applications in Mini Infra.
 tags:
   - applications
   - deployment
   - docker
   - configuration
+  - stacks
 ---
 
 # Managing Applications
 
-Applications in Mini Infra are configuration templates that define Docker services. Each application specifies an image, ports, environment variables, volumes, and optional routing. When deployed, an application creates a running stack in its environment.
+An **application** is the simplified way to run a service on Mini Infra. Under the hood there is no separate "application" object — an application is a **stack** built from a **user-source stack template**. The application layer gives you a friendly form (image, ports, environment variables, volumes, routing) and hides the template/stack plumbing; everything you see on the [Stacks page](/help/applications/host-stacks) is the same object viewed one layer down.
 
-## Key Concepts
+That matters in one practical way: every lifecycle rule described here — statuses, drift, plan/apply, Upgrade & deploy — is a *stack* rule. If an application ever behaves in a way the application UI doesn't explain, open its stack and the answer will be there.
 
-- **Application** --- A reusable template defining how a Docker service should run.
-- **Stack** --- A running instance of an application, created when you deploy.
-- **Environment** --- The target environment where the stack runs.
+## Key concepts
 
-## Viewing Applications
+- **Application** — a user-source stack template plus the stack deployed from it.
+- **Stack** — the deployed unit: containers, networks, volumes, and config files, managed with plan/apply semantics.
+- **Template version** — an immutable snapshot of the application's configuration. Saving publishes a new version; the running stack stays on the version it was deployed with until you upgrade it.
+- **Environment** — the target the stack runs in. It cannot be changed after creation.
 
-The Applications page shows all applications as cards in a responsive grid. Each card displays:
+## Viewing applications
 
-- Application name and optional description.
-- Category and environment badges.
-- Deployment status (Running, Pending, Deploying, or no stacks yet).
-- Application URL (shown when a running stack has a configured hostname).
-- Action buttons for Deploy, Update, and Stop.
+The Applications page shows every application as a card. Each card displays:
 
-## Creating an Application
+- Name, optional description, and category badge.
+- The deployed stack's **status badge** (see [Stack status values](/help/applications/host-stacks#stack-status-values)).
+- A **Needs attention** badge when the stack has an unresolved problem — hover it to see exactly what and why.
+- An **Update available** badge when the template has a newer published version than the running stack.
+- The application URL, when a running stack has a configured hostname.
+- Action buttons: Deploy, Update, Upgrade & deploy, Stop, and a `⋯` menu.
 
-Click **Add Application** to open the creation form. The form is organized into sections:
+## Creating an application
 
-### Basic Information
+Click **Add Application** to open the creation form.
 
-- **Display Name** --- A human-readable name for the application.
-- **Description** --- Optional text describing the application.
+### Basic information
 
-### Service Configuration
+- **Display name** — a human-readable name.
+- **Description** — optional.
 
-- **Service Name** --- Used as the container name prefix. Must be lowercase with hyphens.
-- **Service Type**:
-  - **Stateful** --- For databases, caches, and services that do not need external HTTP routing.
-  - **StatelessWeb** --- For web applications and APIs that need HAProxy routing.
-- **Environment** --- The target environment for deployment.
+### Service configuration
 
-### Container Configuration
+- **Service name** — the container name prefix. Lowercase with hyphens.
+- **Service type**:
+  - **Stateful** — databases, caches, workers. Replaced with a stop/start cycle, so there's a brief gap on each apply.
+  - **StatelessWeb** — web apps and APIs. Released blue-green via HAProxy, so updates are zero-downtime.
+- **Environment** — the deployment target. Permanent once set.
 
-- **Docker Image** and **Tag** --- The image to pull and run.
-- **Restart Policy** --- How Docker handles container restarts (Always, Unless Stopped, On Failure, or No).
+### Container configuration
 
-### Health Check (optional)
+- **Docker image** and **tag**.
+- **Restart policy** — Always, Unless Stopped, On Failure, or No.
 
-Enable to configure a Docker health check with a command, interval, timeout, retries, and start period.
+### Health check (optional)
 
-### Port Mappings
+A Docker health check with a command, interval, timeout, retries, and start period.
 
-Map host ports to container ports with protocol selection (TCP or UDP).
+> **Durations are milliseconds.** `interval`, `timeout`, and `startPeriod` are all in milliseconds; `retries` is a plain count. The form's units are already correct — this only matters if you also author templates through the API or YAML, where these fields were previously written in seconds. See `docs/user/stack-definition-reference.md` and `docs/API-CHANGELOG.md` in the repository.
 
-### Environment Variables
+### Ports, environment variables, volumes
 
-Define key-value pairs passed to the container at runtime.
-
-### Volumes
-
-Named Docker volumes with mount paths for persistent data.
+Host-to-container port mappings (TCP or UDP), key-value environment variables, and named Docker volumes with mount paths for persistent data.
 
 ### Routing (StatelessWeb only)
 
-When the service type is StatelessWeb:
+- **Hostname** — the domain traffic arrives on.
+- **Listening port** — the port the container listens on. **Detect Ports** reads it from the image.
+- **SSL/TLS** — issues a TLS certificate and DNS record automatically.
+- **Cloudflare Tunnel** — creates a tunnel ingress for internet-type environments.
 
-- **Hostname** --- The domain name for routing traffic.
-- **Listening Port** --- The port the container listens on. Use **Detect Ports** to auto-detect from the image.
-- **SSL/TLS** --- Automatically creates a TLS certificate and DNS record (for local networks).
-- **Cloudflare Tunnel** --- Automatically creates a tunnel ingress (for internet networks).
+### Deploy immediately
 
-### Deploy Immediately
+Toggle whether to deploy right away or just save the definition for later.
 
-Toggle whether to deploy the application right after creation, or just save the template for later.
+## Deploying an application
 
-## Deploying an Application
+Click **Deploy** on a card with no running stack. Mini Infra instantiates the template as a stack and applies it — pulling images, creating networks and volumes, then starting containers. Progress streams into the task tracker in the header.
 
-If the application has no running stacks, click the **Deploy** button on its card. This instantiates the template as a stack in the configured environment and applies the configuration.
+For an **adopted** application (one wrapped around pre-existing containers) the button reads **Connect** instead.
 
-## Updating an Application
+## Saving configuration changes
 
-Click **Update** on a running application's card to pull the latest Docker image and redeploy. For StatelessWeb services, the update uses zero-downtime deployment so traffic is not interrupted.
+Open an application and go to **Configuration**. The two buttons do different things, and the difference is the whole point:
 
-## Stopping an Application
+| Button | What happens |
+|--------|--------------|
+| **Save** | Publishes a new template version. The running stack is **not touched** — it keeps running the old version. The application then shows **Update available**, and a banner offers to deploy it. |
+| **Save & deploy** | Publishes the new version *and* upgrades the running stack to it *and* applies, as one tracked operation. |
 
-Click **Stop** to destroy all stacks for the application. The containers are removed but the application template is preserved and can be redeployed later.
+**Save** exists so you can stage a change without releasing it. If you save and walk away nothing breaks — but nothing ships either, and the running containers stay on the previous version until you deploy. That's why the banner is persistent rather than a dismissible toast.
 
-## Editing an Application
+## Upgrade & deploy
 
-Open the dropdown menu on an application card and select **Edit** to modify the template configuration. Changes take effect on the next deployment or update. The environment cannot be changed after creation.
+Whenever an application's template has a newer published version than the running stack, an **Update available** badge and an **Upgrade & deploy** button appear. Clicking it re-materialises the stack from the template's current published version and applies it — one action, tracked end to end in the task tracker.
 
-## Deleting an Application
+You'll see this after a **Save**, after someone else publishes a change to the template, and after a Mini Infra release ships a new version of a built-in template.
 
-Open the dropdown menu and select **Delete**. This permanently removes the application template. Running stacks should be stopped first.
+If the target version declares inputs marked **rotate on upgrade** — a password or key that must be freshly supplied every time — a **Supply upgrade inputs** dialog appears first and collects them. The upgrade won't proceed until every such field is filled.
+
+## Discarding pending changes
+
+A stack in **Pending** status has edits to its definition that were never applied. To throw them away, click **Discard pending changes** on the card and confirm. The definition is restored from the last applied snapshot and the status returns to **Synced**.
+
+This only touches the definition — no containers are stopped or recreated, and it is instant. An application that has never been deployed has no snapshot to fall back to, so there is nothing to discard.
+
+## Updating the image
+
+Click **Update** to pull the latest image for the current tag and redeploy. For **StatelessWeb** services the update runs blue-green, so traffic is never interrupted. For **Stateful** services the container is stopped and recreated, so there is a short gap.
+
+Update picks up a new image build under the same tag. It is not the same as **Upgrade & deploy**, which adopts a new *template version*.
+
+## Stop, Remove, and Delete
+
+These were once conflated under a single "Stop". They are now distinct, and picking the wrong one is the difference between a five-second restart and losing your data.
+
+| Action | Where | Containers | Volumes | Stack | Template |
+|--------|-------|------------|---------|-------|----------|
+| **Stop** | Card / stack detail | Stopped and removed | **Kept** | **Kept** (status → Undeployed) | Kept |
+| **Remove deployment** | `⋯` menu | Removed | **Destroyed** | **Destroyed** | Kept |
+| **Delete application** | `⋯` menu | — | — | — | **Deleted** |
+
+- **Stop** is the reversible one. It stops the containers but keeps the stack definition and its volumes, so **Deploy** brings it straight back with its data intact. Use this to park an application.
+- **Remove deployment** tears the deployment down: containers, networks, volumes, and the stack record all go, along with the Cloudflare tunnel hostname and its DNS record if it had one. The application (the template) survives, so you can deploy a fresh one — but **the data in its volumes is gone**. For an adopted application this reads **Disconnect & remove**.
+- **Delete application** removes the template itself. Remove the deployment first; an application whose stack still has containers won't delete.
+
+## Editing metadata
+
+**Edit** in the `⋯` menu changes the application's name and description. Configuration changes belong on the Configuration page.
+
+## What to watch out for
+
+- **A Drifted or Needs attention application may mean it is down.** A background monitor watches Docker events, so a container that crashes an hour after a clean deploy flips the stack to **Drifted** on its own — you don't have to open the plan to find out. Hover the **Needs attention** badge: it names the service and says whether it's missing, not running, or no longer matches what was applied.
+- **Save does not deploy.** See the table above.
+- **The environment is permanent.** To move an application, recreate it in the target environment.
+- **StatelessWeb needs HAProxy.** A StatelessWeb service can't route without a running HAProxy stack.

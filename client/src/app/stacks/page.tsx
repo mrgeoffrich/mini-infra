@@ -96,7 +96,10 @@ export default function StacksPage() {
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
       <div className="px-4 lg:px-6">
-        <div className="flex items-center justify-between gap-3">
+        <div
+          className="flex items-center justify-between gap-3"
+          data-tour="stacks-page-header"
+        >
           <div className="flex items-center gap-3">
             <div className="rounded-md bg-purple-100 p-2 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
               <IconStack2 className="h-5 w-5" />
@@ -114,6 +117,7 @@ export default function StacksPage() {
             size="sm"
             onClick={() => refetch()}
             disabled={isRefetching}
+            data-tour="stacks-refresh-button"
           >
             <IconRefresh className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
             Refresh
@@ -125,7 +129,7 @@ export default function StacksPage() {
         <Card>
           <CardContent className="space-y-4 pt-6">
             {/* Filters */}
-            <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-wrap items-end gap-3" data-tour="stacks-filters">
               <div className="min-w-[200px] flex-1">
                 <Label className="text-xs">Search</Label>
                 <Input
@@ -133,12 +137,13 @@ export default function StacksPage() {
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   className="h-9"
+                  data-tour="stacks-search-input"
                 />
               </div>
               <div>
                 <Label className="text-xs">Scope</Label>
                 <Select value={scope} onValueChange={(v) => setScope(v as ScopeFilter)}>
-                  <SelectTrigger className="h-9 w-[150px]">
+                  <SelectTrigger className="h-9 w-[150px]" data-tour="stacks-scope-filter">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -151,7 +156,7 @@ export default function StacksPage() {
               <div>
                 <Label className="text-xs">Source</Label>
                 <Select value={source} onValueChange={(v) => setSource(v as SourceFilter)}>
-                  <SelectTrigger className="h-9 w-[160px]">
+                  <SelectTrigger className="h-9 w-[160px]" data-tour="stacks-source-filter">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -165,7 +170,7 @@ export default function StacksPage() {
               <div>
                 <Label className="text-xs">Status</Label>
                 <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
-                  <SelectTrigger className="h-9 w-[140px]">
+                  <SelectTrigger className="h-9 w-[140px]" data-tour="stacks-status-filter">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -183,6 +188,7 @@ export default function StacksPage() {
                   id="attention-only"
                   checked={attentionOnly}
                   onCheckedChange={setAttentionOnly}
+                  data-tour="stacks-needs-attention-toggle"
                 />
                 <Label htmlFor="attention-only" className="text-xs">
                   Needs attention
@@ -209,7 +215,7 @@ export default function StacksPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <Table>
+                <Table data-tour="stacks-table">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>

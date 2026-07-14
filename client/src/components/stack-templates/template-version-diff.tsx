@@ -24,14 +24,14 @@ export function TemplateVersionDiff({ from, to, emptyLabel }: TemplateVersionDif
 
   if (!diff.hasChanges) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-muted-foreground" data-tour="template-version-diff">
         {emptyLabel ?? "No differences between these versions."}
       </p>
     );
   }
 
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-4 text-sm" data-tour="template-version-diff">
       {diff.servicesAdded.length > 0 && (
         <div>
           <div className="mb-1 flex items-center gap-1.5 font-medium text-green-700 dark:text-green-400">

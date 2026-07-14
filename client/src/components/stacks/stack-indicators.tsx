@@ -29,6 +29,7 @@ export function UpdateAvailableBadge({ className }: { className?: string }) {
               "cursor-help border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300",
               className,
             )}
+            data-tour="stack-update-available-badge"
           >
             <IconArrowUp className="mr-1 h-3 w-3" />
             Update available
@@ -67,6 +68,7 @@ export function NeedsAttentionBadge({
               "cursor-help border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
               className,
             )}
+            data-tour="stack-needs-attention-badge"
           >
             <IconAlertTriangle className="mr-1 h-3 w-3" />
             Needs attention
@@ -144,6 +146,7 @@ export function UpgradeButton({
         className={className}
         disabled={disabled || busy}
         onClick={handleClick}
+        data-tour="stack-upgrade-button"
       >
         {busy ? (
           <IconLoader2 className="mr-1 h-4 w-4 animate-spin" />
