@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StackStatusBadge } from "@/components/stacks/StackStatusBadge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -238,13 +239,16 @@ export function EnvironmentDetailPage() {
                 <div className="space-y-1.5">
                   {userStacks.map((stack) => (
                     <div key={stack.id} className="flex items-center justify-between text-sm">
-                      <span className="truncate font-medium">{stack.name}</span>
-                      <Badge
-                        variant={stack.status === "synced" ? "default" : "secondary"}
-                        className="text-xs ml-2 shrink-0"
+                      <Link
+                        to={`/stacks/${stack.id}`}
+                        className="truncate font-medium hover:underline"
                       >
-                        {stack.status}
-                      </Badge>
+                        {stack.name}
+                      </Link>
+                      <StackStatusBadge
+                        status={stack.status}
+                        className="text-xs ml-2 shrink-0"
+                      />
                     </div>
                   ))}
                 </div>

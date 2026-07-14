@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { useStacks } from "@/hooks/use-stacks";
 import { useStackTemplates, useInstantiateTemplate } from "@/hooks/use-stack-templates";
 import type { StackInfo, StackTemplateInfo } from "@mini-infra/types";
 import { StackPlanView, StackStatusBadge } from "@/components/stacks";
+import { UpdateAvailableBadge } from "@/components/stacks/stack-indicators";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,7 @@ import {
   IconChevronUp,
   IconAlertCircle,
   IconPlus,
+  IconExternalLink,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 
@@ -84,7 +87,7 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
     error,
     refetch,
     isRefetching,
-  } = useStacks(environmentId, { scope });
+  } = useStacks(environmentId, { scope, source: "system" });
 
   const stacks: StackInfo[] = (stacksData?.data ?? []).filter((s) =>
     scope === "host" ? s.environmentId === null : s.environmentId !== null
@@ -196,8 +199,9 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
 
                 return (
                   <div key={stack.id} className="rounded-md border">
+                    <div className="flex items-center">
                     <button
-                      className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
+                      className="flex flex-1 items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors"
                       onClick={() => toggleExpanded(stack.id)}
                     >
                       <div className="flex items-center gap-3">
@@ -208,6 +212,7 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
                               {stack.name}
                             </span>
                             <StackStatusBadge status={stack.status} />
+                            {stack.templateUpdateAvailable && <UpdateAvailableBadge />}
                             {stack.natsDrift?.drifted && (
                               <NatsDriftBadge reasons={stack.natsDrift.reasons} />
                             )}
@@ -243,6 +248,14 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
                         )}
                       </div>
                     </button>
+                    <Link
+                      to={`/stacks/${stack.id}`}
+                      className="flex items-center px-3 text-muted-foreground hover:text-foreground"
+                      title="Open stack detail"
+                    >
+                      <IconExternalLink className="h-4 w-4" />
+                    </Link>
+                    </div>
                     {isExpanded && (
                       <div className="border-t p-4">
                         <StackPlanView

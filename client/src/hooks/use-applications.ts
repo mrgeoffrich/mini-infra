@@ -15,6 +15,7 @@ import type {
 } from "@mini-infra/types";
 import { apiFetch } from "@/lib/api-client";
 import { toastApiError } from "@/lib/errors";
+import { buildDraftFromVersion } from "@/lib/application-draft";
 
 // ====================
 // Application API Functions
@@ -174,14 +175,13 @@ async function updateStack(
   });
 }
 
-async function updateStackService(
+async function upgradeStack(
   stackId: string,
-  serviceName: string,
-  patch: { dockerTag?: string; dockerImage?: string },
+  inputValues?: Record<string, string>,
 ): Promise<StackInfo> {
-  return apiFetch<StackInfo>(ApiRoute.stacks.service(stackId, serviceName), {
-    method: "PUT",
-    body: patch,
+  return apiFetch<StackInfo>(ApiRoute.stacks.upgrade(stackId), {
+    method: "POST",
+    body: inputValues ? { inputValues } : {},
     correlationIdPrefix: "applications",
   });
 }
@@ -343,6 +343,12 @@ export function useUpdateApplication() {
       toast.success("Application updated successfully");
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.detailAll });
+      // Publishing a new template version flips the deployed stack's
+      // `templateUpdateAvailable` to true — refresh the stack queries so the
+      // "older version — Upgrade & deploy" banner appears without a manual
+      // reload.
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
       // A republish can change a service's declared `joinNetworks` (e.g. via the
       // Overview Connected Networks card), so refresh the managed-network views
       // that read it. The change only compiles into live memberships on the
@@ -486,17 +492,31 @@ export function useDeployApplicationUpdate() {
   return useMutation({
     mutationFn: async (args: {
       stackId: string;
+      templateId: string;
       serviceName: string;
       newTag: string;
       currentTag: string;
       stackStatus: StackStatus;
     }) => {
       if (args.newTag !== args.currentTag) {
-        await updateStackService(
-          args.stackId,
-          args.serviceName,
-          { dockerTag: args.newTag },
+        // Write-path unification (P1 item 9): a tag change goes through the
+        // TEMPLATE, not directly onto the stack service. Rebuild a lossless
+        // draft from the current published version, change just this service's
+        // tag, publish, then upgrade the stack (re-materialize from the new
+        // version) and apply. This keeps the template the single source of
+        // truth so stack and template can't diverge.
+        const tmpl = await fetchApplication(args.templateId);
+        const version = tmpl.data.currentVersion;
+        if (!version) {
+          throw new Error("Application template has no published version to update");
+        }
+        const draft = buildDraftFromVersion(version);
+        draft.services = (draft.services ?? []).map((s) =>
+          s.serviceName === args.serviceName ? { ...s, dockerTag: args.newTag } : s,
         );
+        await createDraft(args.templateId, draft);
+        await publishApplication(args.templateId);
+        await upgradeStack(args.stackId);
         await applyStack(args.stackId);
       } else if (UPDATABLE_STATUSES.has(args.stackStatus)) {
         // Unchanged tag on a deployed stack → pull-latest-and-recreate.
@@ -510,6 +530,7 @@ export function useDeployApplicationUpdate() {
     onSuccess: () => {
       toast.success("Application update started");
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.detailAll });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },

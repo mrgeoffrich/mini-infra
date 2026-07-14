@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useStackTemplates, useInstantiateTemplate, useTemplatePrerequisites } from "@/hooks/use-stack-templates";
 import type { StackTemplateInfo, StackTemplateLinkedStack } from "@mini-infra/types";
 import { StackPlanView, StackStatusBadge } from "@/components/stacks";
@@ -16,6 +17,7 @@ import {
   IconAlertCircle,
   IconRocket,
   IconLoader2,
+  IconExternalLink,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 
@@ -163,6 +165,15 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
                         </div>
                       </button>
                       <div className="flex items-center gap-2">
+                        {stack && (
+                          <Link
+                            to={`/stacks/${stack.id}`}
+                            className="flex items-center text-muted-foreground hover:text-foreground"
+                            title="Open stack detail"
+                          >
+                            <IconExternalLink className="h-4 w-4" />
+                          </Link>
+                        )}
                         {deployable && (
                           <Button
                             size="sm"

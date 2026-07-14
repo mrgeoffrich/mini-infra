@@ -53,7 +53,7 @@ export default function NewApplicationPage() {
   const selectedEnvironment = environments.find((e) => e.id === selectedEnvId);
   const networkType = selectedEnvironment?.networkType;
 
-  const { data: stacksData } = useStacks(selectedEnvId);
+  const { data: stacksData } = useStacks(selectedEnvId, { source: "system" });
   const { data: userStacksData } = useUserStacks();
   const hasHaproxyApplicationsNetwork = (stacksData?.data ?? []).some(
     (stack) =>

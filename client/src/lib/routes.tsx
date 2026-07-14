@@ -70,6 +70,8 @@ import { MonitoringPage } from "@/app/monitoring/page";
 import { LogsPage } from "@/app/logs/page";
 import StackTemplatesPage from "@/app/stack-templates/page";
 import StackTemplateDetailPage from "@/app/stack-templates/[templateId]/page";
+import StacksPage from "@/app/stacks/page";
+import StackDetailPage from "@/app/stacks/[stackId]/page";
 import UserManagementPage from "@/app/settings/users/page";
 import AuthenticationSettingsPage from "@/app/settings/authentication/page";
 import VaultPage from "@/app/vault/page";
@@ -388,6 +390,14 @@ export const router = createBrowserRouter([
       {
         path: "stack-templates/:templateId",
         element: <StackTemplateDetailPage />,
+      },
+      {
+        path: "stacks",
+        element: <StacksPage />,
+      },
+      {
+        path: "stacks/:stackId",
+        element: <StackDetailPage />,
       },
       {
         path: "vault",

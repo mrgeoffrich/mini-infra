@@ -41,6 +41,10 @@ import {
 import { cn } from "@/lib/utils";
 import { useDeployApplicationUpdate } from "@/hooks/use-applications";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
+import {
+  UpdateAvailableBadge,
+  UpgradeButton,
+} from "@/components/stacks/stack-indicators";
 import { Channel } from "@mini-infra/types";
 import type {
   StackInfo,
@@ -146,6 +150,11 @@ export function ApplicationCard({
   // instead of a dead Update button.
   const pendingUnapplied = primaryStack?.status === "pending" && !taskExecuting;
 
+  // A newer template version is available (P1 item 8) — the right action is to
+  // upgrade + deploy, which supersedes a manual image-tag update.
+  const updateAvailable = primaryStack?.templateUpdateAvailable === true;
+  const upgradeLabel = `Upgrading ${app.displayName ?? app.name}`;
+
   // Don't show the flipped face while the stack is churning — the busy overlay
   // takes precedence. Derived rather than an effect to avoid cascading renders.
   const effectivelyFlipped = flipped && !effectivelyBusy;
@@ -173,6 +182,7 @@ export function ApplicationCard({
       });
       await deployUpdate.mutateAsync({
         stackId: primaryStack.id,
+        templateId: app.id,
         serviceName: primaryService.serviceName,
         newTag: trimmedTag,
         currentTag,
@@ -279,6 +289,7 @@ export function ApplicationCard({
           <CardContent className="pt-0 flex-1 flex flex-col">
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               {app.isArchived && <Badge variant="destructive">Archived</Badge>}
+              {updateAvailable && <UpdateAvailableBadge />}
               {primaryStack && (
                 <Badge
                   variant={
@@ -339,6 +350,13 @@ export function ApplicationCard({
                       )}
                       Apply changes
                     </Button>
+                  ) : updateAvailable && !adopted && primaryStack ? (
+                    <UpgradeButton
+                      stackId={primaryStack.id}
+                      label={upgradeLabel}
+                      className="flex-1"
+                      disabled={effectivelyBusy}
+                    />
                   ) : (
                     !adopted && (
                       <TooltipProvider>
