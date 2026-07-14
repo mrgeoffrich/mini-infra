@@ -68,7 +68,9 @@ export function PromoteToEnvironmentDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [targetStackId, setTargetStackId] = useState<string | null>(null);
+  // Empty string, not null: the Select must be controlled from first render, or
+  // React warns as it flips uncontrolled → controlled on the first choice.
+  const [targetStackId, setTargetStackId] = useState("");
 
   const envName = (stack: StackInfo) =>
     stack.environmentId
@@ -92,7 +94,7 @@ export function PromoteToEnvironmentDialog({
     stackId: targetStack?.id ?? "",
     label: targetStack ? `Promoting to ${envName(targetStack)}` : "Promoting",
     onDone: () => {
-      setTargetStackId(null);
+      setTargetStackId("");
       onOpenChange(false);
     },
   });
@@ -138,10 +140,7 @@ export function PromoteToEnvironmentDialog({
 
                 <div className="min-w-0 flex-1">
                   <div className="mb-1 text-xs text-muted-foreground">To</div>
-                  <Select
-                    value={targetStackId ?? undefined}
-                    onValueChange={setTargetStackId}
-                  >
+                  <Select value={targetStackId} onValueChange={setTargetStackId}>
                     <SelectTrigger data-tour="promote-target-environment">
                       <SelectValue placeholder="Choose an environment…" />
                     </SelectTrigger>
