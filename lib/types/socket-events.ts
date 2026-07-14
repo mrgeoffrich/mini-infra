@@ -12,7 +12,7 @@ import type {
 import type { ConnectivityStatusInfo } from "./settings";
 import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
-import type { ServiceApplyResult, ResourceResult, ApplyResult, DestroyResult, StackStopResult } from "./stacks";
+import type { ServiceApplyResult, ResourceResult, ApplyResult, DestroyResult, StackStopResult, StackStatus } from "./stacks";
 import type { CertIssuanceStep, CertIssuanceResult } from "./tls";
 import type { OperationStep } from "./operations";
 import type {
@@ -345,11 +345,20 @@ export interface ServerToClientEvents {
   "connectivity:all": (data: ConnectivityStatusInfo[]) => void;
 
   // ── Stacks ──────────────────────────────────────────
-  /** Stack status changed */
+  /**
+   * A stack's persisted status changed outside (or at the tail of) a tracked
+   * operation — e.g. post-plan drift marking, an apply/upgrade/stop success,
+   * a definition edit that set `pending`, or a revert. Carries scope hints so
+   * a listener can invalidate the right list query keys (global stacks, the
+   * owning environment, the linked template, applications) without a full
+   * refetch of everything.
+   */
   "stack:status": (data: {
     stackId: string;
-    status: string;
-    containers: Array<{ name: string; status: string }>;
+    status: StackStatus;
+    environmentId?: string | null;
+    templateId?: string | null;
+    templateSource?: "system" | "user" | null;
   }) => void;
   /** Stack apply operation started */
   "stack:apply:started": (data: {

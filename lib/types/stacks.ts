@@ -945,6 +945,13 @@ export interface ApplyResult {
   serviceResults: ServiceApplyResult[];
   resourceResults: ResourceResult[];
   duration: number;
+  /**
+   * True when an `update` (pull-latest-and-recreate) found every image already
+   * current and did no work. Lets the client distinguish "nothing to pull" from
+   * a real update that happened to touch zero services, so it can say "Already
+   * up to date" instead of a generic success. Undefined on `apply` results.
+   */
+  upToDate?: boolean;
 }
 
 export interface ServiceApplyResult {
