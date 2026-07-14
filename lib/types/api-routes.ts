@@ -751,6 +751,8 @@ export const ApiRoute = {
       `${ApiBase.stacks}/${stackId}/services/${serviceName}/git-deploy-key`,
     /** GET /api/stacks/:stackId/status */
     status: (stackId: string): string => `${ApiBase.stacks}/${stackId}/status`,
+    /** POST /api/stacks/:stackId/stop — stop containers, keep the stack definition */
+    stop: (stackId: string): string => `${ApiBase.stacks}/${stackId}/stop`,
     /** POST /api/stacks/:stackId/update */
     update: (stackId: string): string => `${ApiBase.stacks}/${stackId}/update`,
     /** GET /api/stacks/:stackId/validate */

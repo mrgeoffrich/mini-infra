@@ -962,6 +962,20 @@ export interface DestroyResult {
   error?: string;
 }
 
+/**
+ * Result of a stop (undeploy-but-keep) operation: the stack's containers are
+ * stopped and removed, but its definition + DB row are kept and its status is
+ * set to `undeployed` so it can be deployed again without re-instantiating.
+ * Distinct from {@link DestroyResult}, which deletes the stack record.
+ */
+export interface StackStopResult {
+  success: boolean;
+  stackId: string;
+  stoppedContainers: number;
+  duration: number;
+  error?: string;
+}
+
 // Live status (server response shape from GET /stacks/:id/status)
 
 export interface StackContainerStatus {

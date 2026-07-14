@@ -5,6 +5,7 @@ import {
   type ResourceResult,
   type ApplyResult,
   type DestroyResult,
+  type StackStopResult,
 } from '@mini-infra/types';
 import { emitToChannel } from '../../lib/socket';
 
@@ -89,6 +90,30 @@ export function emitStackDestroyFailed(stackId: string, error: unknown, startTim
     containersRemoved: 0,
     networksRemoved: [],
     volumesRemoved: [],
+    duration: Date.now() - startTime,
+    error: message,
+  });
+}
+
+export function emitStackStopStarted(stackId: string, stackName: string): void {
+  try {
+    emitToChannel(Channel.STACKS, ServerEvent.STACK_STOP_STARTED, { stackId, stackName });
+  } catch { /* never break the caller */ }
+}
+
+export function emitStackStopCompleted(payload: StackStopResult): void {
+  try {
+    emitToChannel(Channel.STACKS, ServerEvent.STACK_STOP_COMPLETED, payload);
+  } catch { /* never break the caller */ }
+}
+
+/** Emits a synthetic STACK_STOP_COMPLETED with success=false for catch blocks. */
+export function emitStackStopFailed(stackId: string, error: unknown, startTime: number): void {
+  const message = error instanceof Error ? error.message : String(error);
+  emitStackStopCompleted({
+    success: false,
+    stackId,
+    stoppedContainers: 0,
     duration: Date.now() - startTime,
     error: message,
   });
