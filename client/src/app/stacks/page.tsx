@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { IconRefresh, IconStack2 } from "@tabler/icons-react";
+import { IconPlus, IconRefresh, IconStack2 } from "@tabler/icons-react";
+import { CreateStackDialog } from "@/components/stacks/CreateStackDialog";
 import { useAllStacks, useStackStatusEvents } from "@/hooks/use-stacks";
 import { useEnvironments } from "@/hooks/use-environments";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
@@ -64,6 +65,7 @@ export default function StacksPage() {
     return map;
   }, [envData]);
 
+  const [createOpen, setCreateOpen] = useState(false);
   const [q, setQ] = useState(searchParams.get("q") ?? "");
   const [scope, setScope] = useState<ScopeFilter>("all");
   const [source, setSource] = useState<SourceFilter>("all");
@@ -112,18 +114,30 @@ export default function StacksPage() {
               </p>
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isRefetching}
-            data-tour="stacks-refresh-button"
-          >
-            <IconRefresh className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              disabled={isRefetching}
+              data-tour="stacks-refresh-button"
+            >
+              <IconRefresh className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => setCreateOpen(true)}
+              data-tour="stacks-create-button"
+            >
+              <IconPlus className="h-4 w-4" />
+              Create stack
+            </Button>
+          </div>
         </div>
       </div>
+
+      <CreateStackDialog open={createOpen} onOpenChange={setCreateOpen} />
 
       <div className="px-4 lg:px-6">
         <Card>

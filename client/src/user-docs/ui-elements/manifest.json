@@ -24,10 +24,28 @@
           "file": "client/src/app/applications/[id]/_components/connected-networks-card.tsx"
         },
         {
+          "id": "application-environments-panel",
+          "label": "Application Environments Panel",
+          "elementType": "Card",
+          "file": "client/src/app/applications/[id]/_components/environments-panel.tsx"
+        },
+        {
           "id": "stack-history-restore-button",
           "label": "Stack History Restore Button",
           "elementType": "Button",
           "file": "client/src/app/applications/[id]/_components/history-section.tsx"
+        },
+        {
+          "id": "application-deploy-button",
+          "label": "Application Deploy Button",
+          "elementType": "Button",
+          "file": "client/src/app/applications/[id]/layout.tsx"
+        },
+        {
+          "id": "application-deploy-confirm",
+          "label": "Application Deploy Confirm",
+          "elementType": "Button",
+          "file": "client/src/app/applications/_components/deploy-to-environment-dialog.tsx"
         },
         {
           "id": "applications-add-button",
@@ -460,6 +478,12 @@
         {
           "id": "stacks-refresh-button",
           "label": "Stacks Refresh Button",
+          "elementType": "Button",
+          "file": "client/src/app/stacks/page.tsx"
+        },
+        {
+          "id": "stacks-create-button",
+          "label": "Stacks Create Button",
           "elementType": "Button",
           "file": "client/src/app/stacks/page.tsx"
         },

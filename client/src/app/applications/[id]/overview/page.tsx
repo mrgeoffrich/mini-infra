@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { StackDeploymentRecord } from "@mini-infra/types";
+import { EnvironmentsPanel } from "@/app/applications/[id]/_components/environments-panel";
 import { StatusStrip } from "../_components/status-strip";
 import { ConnectCard } from "../_components/connect-card";
 import { ConnectedNetworksCard } from "../_components/connected-networks-card";
@@ -72,6 +73,12 @@ export default function ApplicationOverviewTab() {
   return (
     <div className="grid gap-6 max-w-4xl">
       <StatusStrip stack={primaryStack} containerStatus={containerStatus} />
+
+      {/* Every deployment of this application, not just the primary one. The
+          rest of this tab still describes the primary stack — that is a
+          reasonable default for the common single-environment case, and this
+          panel is what stops it being the ONLY thing you can see. */}
+      <EnvironmentsPanel template={template} stacks={stacks} />
 
       {lastFailure && (
         <Alert variant="destructive">

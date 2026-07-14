@@ -177,6 +177,25 @@ export function useStackTemplate(
   });
 }
 
+/**
+ * The predicate names a template's `requires` block may reference. Fetched rather
+ * than hardcoded: the registry is server-side and code-only, and a client copy
+ * would drift the first time one is added.
+ */
+export function useTemplatePredicates() {
+  return useQuery({
+    queryKey: queryKeys.stackTemplates.predicates(),
+    queryFn: async () => {
+      const data = await apiFetch<{ predicates: string[] }>(
+        ApiRoute.stackTemplates.predicates(),
+        { correlationIdPrefix: "stack-templates" },
+      );
+      return data.predicates ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useStackTemplateVersions(templateId: string | undefined) {
   return useQuery({
     queryKey: queryKeys.stackTemplates.versions(templateId ?? ""),

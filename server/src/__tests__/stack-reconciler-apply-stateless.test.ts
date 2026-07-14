@@ -268,6 +268,12 @@ const mockPrisma = {
   },
   stackDeployment: {
     create: mockStackDeploymentCreate,
+    // Snapshot retention runs after each deployment is recorded. Stubbed rather
+    // than omitted: the reconciler swallows a prune failure (housekeeping must
+    // not fail an already-recorded deploy), so leaving these off would make the
+    // tests pass through the catch and quietly stop covering the prune path.
+    findMany: vi.fn().mockResolvedValue([]),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   stackResource: {
     findMany: vi.fn().mockResolvedValue([]),

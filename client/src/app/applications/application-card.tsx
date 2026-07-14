@@ -57,6 +57,7 @@ import {
   UpdateAvailableBadge,
   UpgradeButton,
 } from "@/components/stacks/stack-indicators";
+import { EnvironmentsSummary } from "@/app/applications/[id]/_components/environments-panel";
 import { Channel } from "@mini-infra/types";
 import type {
   StackInfo,
@@ -321,10 +322,19 @@ export function ApplicationCard({
                     : primaryStack.status ?? "Deployed"}
                 </Badge>
               )}
-              {app.environmentId && environmentName && (
-                <Badge variant="outline" className="text-xs">
-                  {environmentName}
-                </Badge>
+              {/* One environment: name it. Several: the status badge above is a
+                  claim about ONE deployment, so say how many there really are and
+                  how many want a human — otherwise a healthy staging can make a
+                  broken production look fine. */}
+              {(appStacks?.length ?? 0) > 1 ? (
+                <EnvironmentsSummary stacks={appStacks ?? []} />
+              ) : (
+                app.environmentId &&
+                environmentName && (
+                  <Badge variant="outline" className="text-xs">
+                    {environmentName}
+                  </Badge>
+                )
               )}
             </div>
 

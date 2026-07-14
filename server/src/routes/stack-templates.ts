@@ -8,6 +8,7 @@ import { requirePermission } from '../middleware/auth';
 import { NotFoundError, ValidationError, ForbiddenError } from '../lib/errors';
 import { StackTemplateService } from '../services/stacks/stack-template-service';
 import { evaluatePrerequisitesForTemplateVersion } from '../services/stacks/template-prerequisites';
+import { listPredicateNames } from '../services/stacks/template-prerequisites/predicates';
 import {
   createTemplateSchema,
   updateTemplateMetaSchema,
@@ -78,6 +79,18 @@ router.get('/', requirePermission(Permission.StacksRead), asyncHandler(async (re
   });
 
   res.json({ success: true, data: templates });
+}));
+
+// GET /predicates — The predicate names a template's `requires` block may use.
+// The registry is code-only and fixed at build time, so the authoring UI has to
+// be told what is in it; a hardcoded client copy would silently drift the first
+// time a predicate is added or renamed, and the only feedback would be a 400 on
+// save.
+//
+// MUST stay above `GET /:templateId` — Express matches in order, and below it
+// "predicates" would be parsed as a template id.
+router.get('/predicates', requirePermission(Permission.StacksRead), asyncHandler(async (_req, res) => {
+  res.json({ success: true, data: { predicates: listPredicateNames() } });
 }));
 
 // GET /:templateId — Get template with current version

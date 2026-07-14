@@ -19,6 +19,7 @@ import type {
   ServiceApplyResult,
   ResourceResult,
   ApplyStackRequest,
+  CreateStackRequest,
   StackListResponse,
   StackResponse,
   StackValidationError,
@@ -395,6 +396,29 @@ export function useRevertPendingStack() {
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
+ * Create a templateless ("ad-hoc") stack — POST /api/stacks.
+ *
+ * The endpoint has existed since stacks did, but had zero client callers: such a
+ * stack could only be born via the API, yet showed up on the /stacks page like
+ * any other, which is a half-supported feature. This is the UI for it.
+ */
+export function useCreateStack() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreateStackRequest) =>
+      apiFetch<StackInfo>(ApiRoute.stacks.list(), {
+        method: "POST",
+        body: request,
+        correlationIdPrefix: "stacks",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
     // No onError — the global MutationCache.onError toasts by default.
   });

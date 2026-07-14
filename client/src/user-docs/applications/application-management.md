@@ -78,9 +78,19 @@ Toggle whether to deploy right away or just save the definition for later.
 
 ## Deploying an application
 
-Click **Deploy** on a card with no running stack. Mini Infra instantiates the template as a stack and applies it — pulling images, creating networks and volumes, then starting containers. Progress streams into the task tracker in the header.
+Click **Deploy** and choose the environment to deploy into. Mini Infra instantiates the template as a stack there and applies it — pulling images, creating networks and volumes, then starting containers. Progress streams into the task tracker in the header.
 
 For an **adopted** application (one wrapped around pre-existing containers) the button reads **Connect** instead.
+
+## Running in several environments
+
+An application can be deployed into more than one environment — staging and production, say. Each is its own stack with its own status, its own installed template version, and its own containers.
+
+The **Environments** panel on the application's Overview lists every deployment, one row per environment, with **Deploy to environment** to add another. **Manage** opens that environment's stack, where Apply, Upgrade, Change version, and Stop act on that deployment alone.
+
+When an application runs in several environments, its card shows a count and how many need attention (e.g. *2 environments · 1 needs attention*) rather than a single status — one deployment's health is not the application's health. The rest of the application detail page still describes the primary deployment; open the specific stack when you need to act on one.
+
+The environments offered are those matching the application's network type. An environment that already has this application is shown but not selectable — deploy once per environment.
 
 ## Saving configuration changes
 

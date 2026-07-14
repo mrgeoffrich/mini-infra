@@ -84,6 +84,25 @@ export class StackReconciler {
   }
 
   /**
+   * Age old deployment snapshots out of retention.
+   *
+   * Deliberately non-fatal. This runs AFTER the deployment row is written, so a
+   * failure here means "we couldn't tidy up", not "the deploy failed" — and
+   * failing an otherwise-successful apply because a housekeeping query threw
+   * would be a spectacularly bad trade.
+   */
+  private async pruneSnapshotsQuietly(stackId: string): Promise<void> {
+    try {
+      await pruneDeploymentSnapshots(this.prisma, stackId);
+    } catch (error) {
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error), stackId },
+        'Pruning old deployment snapshots failed (non-fatal)',
+      );
+    }
+  }
+
+  /**
    * Ensure every stack-owned network exists (mechanism 1: the stack's
    * `networks[]`, plus the synthesised `default` network for multi-service
    * stacks that declare none). Shared by `applyInner` and `updateInner` so
@@ -520,7 +539,7 @@ export class StackReconciler {
           snapshot: appliedSnapshot,
         },
       });
-      await pruneDeploymentSnapshots(this.prisma, stackId);
+      await this.pruneSnapshotsQuietly(stackId);
 
       return {
         success: allSucceeded,
@@ -787,7 +806,7 @@ export class StackReconciler {
           snapshot: appliedSnapshot,
         },
       });
-      await pruneDeploymentSnapshots(this.prisma, stackId);
+      await this.pruneSnapshotsQuietly(stackId);
 
       return {
         success: allSucceeded,

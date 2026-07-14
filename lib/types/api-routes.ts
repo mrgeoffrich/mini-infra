@@ -713,6 +713,8 @@ export const ApiRoute = {
     /** POST /api/stack-templates/:templateId/versions/:versionId/archive — retire (or restore) an old published version */
     archiveVersion: (templateId: string, versionId: string): string =>
       `${ApiBase.stackTemplates}/${templateId}/versions/${versionId}/archive`,
+    /** GET /api/stack-templates/predicates — predicate names a `requires` block may use */
+    predicates: (): string => `${ApiBase.stackTemplates}/predicates`,
   },
 
   stacks: {

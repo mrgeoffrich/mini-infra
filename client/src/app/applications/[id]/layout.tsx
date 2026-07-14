@@ -21,6 +21,7 @@ import {
 import { useStackStatus } from "@/hooks/use-stacks";
 import { useEnvironments } from "@/hooks/use-environments";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { DeployToEnvironmentDialog } from "@/app/applications/_components/deploy-to-environment-dialog";
 import { useStackStatusEvents } from "@/hooks/use-stacks";
 import { Channel } from "@mini-infra/types";
 import { Button } from "@/components/ui/button";
@@ -128,26 +129,9 @@ export default function ApplicationDetailLayout() {
   // stack has nothing to stop.
   const canStop = hasStacks && stackStatus !== "undeployed";
 
-  const handleDeploy = async () => {
-    if (!template?.environmentId) return;
-    try {
-      await deployApplication.mutateAsync({
-        templateId: template.id,
-        name: template.name,
-        environmentId: template.environmentId,
-        onStackCreated: (stackId) => {
-          registerTask({
-            id: stackId,
-            type: "stack-apply",
-            label: `Deploying ${template.displayName ?? template.name}`,
-            channel: Channel.STACKS,
-          });
-        },
-      });
-    } catch {
-      // toast handled by mutation
-    }
-  };
+  // Deploy now asks which environment rather than silently using the template's
+  // single `environmentId` pin (and silently doing NOTHING when it had none).
+  const [deployOpen, setDeployOpen] = useState(false);
 
   const handleStop = async () => {
     if (!hasStacks || !template) return;
@@ -306,8 +290,16 @@ export default function ApplicationDetailLayout() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {!hasStacks && template.environmentId && (
-              <Button onClick={handleDeploy} disabled={deployApplication.isPending}>
+            {/* No longer gated on `template.environmentId`: a template without an
+                environment pin could previously never be deployed at all — the
+                button was simply absent, with nothing to explain why. The picker
+                asks instead. */}
+            {!hasStacks && (
+              <Button
+                onClick={() => setDeployOpen(true)}
+                disabled={deployApplication.isPending}
+                data-tour="application-deploy-button"
+              >
                 {deployApplication.isPending ? (
                   <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
@@ -382,6 +374,13 @@ export default function ApplicationDetailLayout() {
           </div>
         </div>
       </ConfigNavProvider>
+
+      <DeployToEnvironmentDialog
+        template={template}
+        stacks={stacks}
+        open={deployOpen}
+        onOpenChange={setDeployOpen}
+      />
 
       <AlertDialog
         open={confirmDelete}

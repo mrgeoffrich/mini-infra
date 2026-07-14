@@ -125,6 +125,33 @@ A stack can end up running a template version *newer* than the template's curren
 
 Such a stack shows an **Ahead of current** badge. It has no update to adopt — there is nothing newer than what it already runs — so **Upgrade & deploy** does not appear, and requesting one is refused. **Change version** is how you move it: pick the version you actually want.
 
+## Creating a stack
+
+**Create stack** on the Stacks page offers two paths:
+
+- **From a template** — the same Install dialog as the template page: name, environment, parameters, and any required inputs.
+- **From scratch** — define the services yourself. This creates a stack with no template behind it. It won't offer upgrades (there is no template to publish new versions of), but you can edit its definition directly at any time.
+
+Nothing is deployed on create. The stack starts **Undeployed**; you Apply when the definition is right.
+
+## Deployment history and restore
+
+Every apply and update records what it deployed, including the stack definition it applied. Expand a row in **Deployment history** and, if the definition was saved, you can **Restore this definition**.
+
+Restoring replaces the stack's current definition with the one that deployment used. **No containers are touched** — the stack becomes **Pending** and you Apply when ready. Any unapplied edits you have at the time are lost.
+
+This is different from [Discard pending changes](#discarding-pending-changes), which restores the *last applied* definition (an undo of edits you haven't deployed). Restore goes back to an older deployment on purpose.
+
+The most recent 20 definitions per stack are kept. Older history rows remain — the record of what happened is never rewritten — but they can no longer be restored from.
+
+## Watching a zero-downtime deploy
+
+**StatelessWeb** services deploy blue-green, and Apply shows the phase as it runs: deploying new containers → waiting for them → registering with the load balancer → health checking → switching traffic → draining old containers → removing them.
+
+The switch is the point of no return. Before it, a failure rolls back automatically and nothing user-visible happened. After it, the new containers are live and there is no automatic way back — the UI says so explicitly when it happens.
+
+**Stateful** services are a stop-and-recreate with no phases, so they show no trail.
+
 ## Stop, Remove, and Delete
 
 These are three different operations with three different blast radii.

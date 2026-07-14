@@ -204,6 +204,10 @@ const mockPrisma = {
   },
   stackDeployment: {
     create: mockStackDeploymentCreate,
+    // Snapshot retention runs after each deployment is recorded — see the note
+    // in stack-reconciler-apply-stateless.test.ts.
+    findMany: vi.fn().mockResolvedValue([]),
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
   stackResource: {
     findMany: vi.fn().mockResolvedValue([]),

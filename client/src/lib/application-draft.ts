@@ -66,11 +66,19 @@ export function buildDraftFromVersion(
     configFiles: version.configFiles?.map(mapConfigFileInfoToInput),
     notes: version.notes ?? undefined,
     inputs: version.inputs,
-    vault: version.vault,
-    nats: version.nats,
     requires: version.requires,
   };
-  return stripNull(draft);
+
+  // vault/nats are attached AFTER the strip, deliberately. Unlike every other
+  // section, their schemas use `.nullable()` — the NATS JetStream limits
+  // (`maxBytes`, `maxAgeSeconds`, `maxDeliver`, …) accept an explicit null, which
+  // does not mean the same thing as an absent key. Running them through stripNull
+  // would quietly rewrite an author's "no limit" into "use the default".
+  return {
+    ...stripNull(draft),
+    ...(version.vault ? { vault: version.vault } : {}),
+    ...(version.nats ? { nats: version.nats } : {}),
+  };
 }
 
 /**
@@ -116,91 +124,19 @@ export function mapServiceInfoToDefinition(
   });
 }
 
-/**
- * Merge a Code-view (YAML) edit over the current draft so that saving from the
- * lossy YAML editor never silently strips sections the codec can't represent.
+/*
+ * `mergeCodeViewDraft` and `versionHasUnrepresentedSections` used to live here.
  *
- * The YAML codec (`yaml-codec.ts`) only models a subset of the template: it
- * drops the top-level `inputs`/`vault`/`nats`/`requires` sections entirely and
- * every per-service binding field (`addons`, `poolConfig`, `jobPoolConfig`,
- * `natsRole`/`natsSigner`, vault/nats credential refs). Sending the parsed YAML
- * as a full draft replace would wipe all of those.
+ * They existed to paper over a lossy YAML codec: the Code view could not
+ * represent `inputs`/`vault`/`nats`/`requires` or the per-service bindings, so a
+ * save would have wiped them, and the merge re-attached them from the current
+ * version afterwards. That made the Code view a view of *most* of the template
+ * which saved *some* of your edits — and it could never express a deletion,
+ * since anything you removed was silently put back.
  *
- * This merges the parsed YAML result (which fully owns the fields it DOES
- * represent, including deletions) over `base` (the lossless
- * `buildDraftFromVersion` mapping of the current version):
- *   - top-level `inputs`/`vault`/`nats`/`requires` carry through from `base`;
- *   - per-service, matched by `serviceName`, the unrepresented binding fields
- *     are re-attached from the matching base service (mirroring the
- *     `{...service, ...definition}` preservation in service-edit-drawer.tsx).
- *
- * A service deleted in the YAML is deleted (it simply won't appear in
- * `parsed.services`); a renamed service has no base match and loses its
- * preserved fields — acceptable, and the same limitation the graphical editor
- * has.
+ * The codec is lossless now (see `yaml-codec.ts`), so the YAML owns the whole
+ * document and the shim is gone. Deleting a section in the Code view deletes it.
  */
-export function mergeCodeViewDraft(
-  base: DraftVersionInput,
-  parsed: DraftVersionInput,
-): DraftVersionInput {
-  const baseServicesByName = new Map(
-    (base.services ?? []).map((s) => [s.serviceName, s]),
-  );
-
-  const services: StackServiceDefinition[] = (parsed.services ?? []).map((svc) => {
-    const baseSvc = baseServicesByName.get(svc.serviceName);
-    if (!baseSvc) return svc; // new or renamed service — nothing to preserve
-
-    // Re-attach only the fields the codec can't represent. `svc` (the YAML
-    // edit) is the base layer so it fully controls every represented field,
-    // including removals; the unrepresented fields are layered back on top.
-    return {
-      ...svc,
-      ...(baseSvc.addons !== undefined ? { addons: baseSvc.addons } : {}),
-      ...(baseSvc.poolConfig !== undefined ? { poolConfig: baseSvc.poolConfig } : {}),
-      ...(baseSvc.jobPoolConfig !== undefined ? { jobPoolConfig: baseSvc.jobPoolConfig } : {}),
-      ...(baseSvc.natsRole !== undefined ? { natsRole: baseSvc.natsRole } : {}),
-      ...(baseSvc.natsSigner !== undefined ? { natsSigner: baseSvc.natsSigner } : {}),
-      ...(baseSvc.vaultAppRoleRef !== undefined ? { vaultAppRoleRef: baseSvc.vaultAppRoleRef } : {}),
-      ...(baseSvc.vaultAppRoleId !== undefined ? { vaultAppRoleId: baseSvc.vaultAppRoleId } : {}),
-      ...(baseSvc.natsCredentialRef !== undefined ? { natsCredentialRef: baseSvc.natsCredentialRef } : {}),
-      ...(baseSvc.natsCredentialId !== undefined ? { natsCredentialId: baseSvc.natsCredentialId } : {}),
-    };
-  });
-
-  return {
-    ...parsed,
-    services,
-    ...(base.inputs !== undefined ? { inputs: base.inputs } : {}),
-    ...(base.vault !== undefined ? { vault: base.vault } : {}),
-    ...(base.nats !== undefined ? { nats: base.nats } : {}),
-    ...(base.requires !== undefined ? { requires: base.requires } : {}),
-  };
-}
-
-/**
- * True when a template version carries sections the YAML Code view can't show
- * (and would strip on save without the merge above). Used to render the
- * "…will be preserved" notice in the Code view.
- */
-export function versionHasUnrepresentedSections(
-  version: StackTemplateVersionInfo,
-): boolean {
-  if (version.inputs && version.inputs.length > 0) return true;
-  if (version.requires && version.requires.length > 0) return true;
-  if (version.vault) return true;
-  if (version.nats) return true;
-  return (version.services ?? []).some(
-    (s) =>
-      (s.addons && Object.keys(s.addons).length > 0) ||
-      s.poolConfig != null ||
-      s.jobPoolConfig != null ||
-      s.natsRole != null ||
-      s.natsSigner != null ||
-      s.vaultAppRoleRef != null ||
-      s.natsCredentialRef != null,
-  );
-}
 
 function mapConfigFileInfoToInput(
   cf: StackTemplateConfigFileInfo,
