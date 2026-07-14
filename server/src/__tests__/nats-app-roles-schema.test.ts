@@ -109,87 +109,88 @@ describe('templateNatsSignerSchema — subjectScope guards', () => {
 
 // ─── Mixing rule: legacy credentials and new roles cannot coexist ────────────
 
-describe('NATS mixing rule (legacy credentials + new roles)', () => {
-  const legacyOnly = {
-    nats: {
-      accounts: [{ name: 'app', scope: 'host' as const }],
-      credentials: [
-        {
-          name: 'app-cred',
-          account: 'app',
-          publishAllow: ['app.>'],
-          subscribeAllow: ['app.>'],
-        },
-      ],
+describe('removed low-level NATS surface', () => {
+  // These four sections and the per-service `natsCredentialRef` binding were
+  // the pre-roles authoring surface. They are rejected rather than deleted,
+  // because Zod strips unknown keys: silently dropping them would let a
+  // template still on the old shape save "successfully" with its whole NATS
+  // section gone. Each rejection has to name the replacement.
+  const cases: Array<{ key: string; nats: Record<string, unknown>; expect: string }> = [
+    {
+      key: 'accounts',
+      nats: { accounts: [{ name: 'app', scope: 'host' }] },
+      expect: 'nats.accounts[] was removed',
     },
-  };
-  const newOnly = {
-    nats: { roles: [{ name: 'gateway', publish: ['agent.in'] }] },
-  };
-  const mixed = {
-    nats: {
-      ...legacyOnly.nats,
-      roles: [{ name: 'gateway', publish: ['agent.in'] }],
+    {
+      key: 'credentials',
+      nats: {
+        credentials: [
+          { name: 'app-cred', account: 'app', publishAllow: ['app.>'], subscribeAllow: ['app.>'] },
+        ],
+      },
+      expect: 'declare nats.roles[] instead',
     },
-  };
+    {
+      key: 'streams',
+      nats: { streams: [{ name: 'legacy', account: 'app', subjects: ['legacy.>'], scope: 'host' }] },
+      expect: 'nats.roles[].streams[]',
+    },
+    {
+      key: 'consumers',
+      nats: { consumers: [{ name: 'leg', stream: 'legacy', scope: 'host' }] },
+      expect: 'nats.roles[].consumers[]',
+    },
+  ];
 
-  it('legacy-only is accepted (file loader)', () => {
-    const r = templateFileSchema.safeParse(fileBody(legacyOnly));
-    expect(r.success).toBe(true);
-  });
+  for (const c of cases) {
+    it(`rejects nats.${c.key} with a migration message (file loader)`, () => {
+      const r = templateFileSchema.safeParse(fileBody({ nats: c.nats }));
+      expect(r.success).toBe(false);
+      if (!r.success) {
+        const msg = r.error.issues.map((i) => i.message).join('|');
+        expect(msg).toContain(c.expect);
+      }
+    });
 
-  it('new-only is accepted (file loader)', () => {
-    const r = templateFileSchema.safeParse(fileBody(newOnly));
-    expect(r.success).toBe(true);
-  });
+    it(`rejects nats.${c.key} with a migration message (HTTP draft)`, () => {
+      const r = draftVersionSchema.safeParse(draftBody({ nats: c.nats }));
+      expect(r.success).toBe(false);
+      if (!r.success) {
+        const msg = r.error.issues.map((i) => i.message).join('|');
+        expect(msg).toContain(c.expect);
+      }
+    });
+  }
 
-  it('mixed is rejected (file loader)', () => {
-    const r = templateFileSchema.safeParse(fileBody(mixed));
+  it('rejects services[].natsCredentialRef and points at natsRole (HTTP draft)', () => {
+    const service = {
+      serviceName: 'api',
+      serviceType: 'Stateful' as const,
+      dockerImage: 'nginx',
+      dockerTag: '1.25',
+      containerConfig: {},
+      dependsOn: [],
+      order: 0,
+    };
+    // Sanity-check the fixture parses without the removed field, so the
+    // rejection below can only be attributed to `natsCredentialRef` itself.
+    expect(draftVersionSchema.safeParse(draftBody({ services: [service] })).success).toBe(true);
+
+    const r = draftVersionSchema.safeParse(
+      draftBody({ services: [{ ...service, natsCredentialRef: 'app-cred' }] }),
+    );
     expect(r.success).toBe(false);
     if (!r.success) {
       const msg = r.error.issues.map((i) => i.message).join('|');
-      expect(msg).toContain('cannot be declared in the same template');
+      expect(msg).toContain('services[].natsCredentialRef was removed');
+      expect(msg).toContain('services[].natsRole');
     }
   });
 
-  it('mixed is rejected (HTTP draft)', () => {
-    const r = draftVersionSchema.safeParse(draftBody(mixed));
-    expect(r.success).toBe(false);
-  });
-
-  it('roles + legacy top-level streams is rejected — declare via roles[].streams instead', () => {
-    // Symmetry with the credentials-vs-roles rule: an app template using
-    // the new role surface must declare its JetStream resources nested on
-    // those roles (auto-prefixed, relative subjects). Top-level streams
-    // keep absolute subjects for system templates and must not coexist
-    // with roles in the same template.
-    const r = templateFileSchema.safeParse(fileBody({
-      nats: {
-        roles: [{ name: 'gateway', publish: ['x'] }],
-        streams: [{ name: 'legacy', account: 'app', subjects: ['legacy.>'], scope: 'host' }],
-        // accounts is required so top-level streams pass shape validation
-        accounts: [{ name: 'app', scope: 'host' as const }],
-      },
-    }));
-    expect(r.success).toBe(false);
-    if (!r.success) {
-      const msg = r.error.issues.map((i) => i.message).join('|');
-      expect(msg).toContain('nats.streams (legacy');
-    }
-  });
-
-  it('roles + legacy top-level consumers is rejected — declare via roles[].consumers instead', () => {
-    const r = templateFileSchema.safeParse(fileBody({
-      nats: {
-        roles: [{ name: 'gateway', publish: ['x'] }],
-        consumers: [{ name: 'leg', stream: 'legacy', scope: 'host' }],
-      },
-    }));
-    expect(r.success).toBe(false);
-    if (!r.success) {
-      const msg = r.error.issues.map((i) => i.message).join('|');
-      expect(msg).toContain('nats.consumers (legacy)');
-    }
+  it('the roles surface on its own is still accepted', () => {
+    const nats = { roles: [{ name: 'gateway', publish: ['agent.in'] }] };
+    expect(templateFileSchema.safeParse(fileBody({ nats })).success).toBe(true);
+    expect(draftVersionSchema.safeParse(draftBody({ nats })).success).toBe(true);
   });
 });
 

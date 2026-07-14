@@ -15,6 +15,30 @@ import { natsRelativeSubjectSchema } from './nats-subject-shapes';
 // equivalent inline copies (FQDN_RE / WILDCARD_RE) that predate this constant;
 // both are intentionally tied by a comment in lib/types/egress.ts.
 
+/**
+ * Declares an authoring field that has been *removed* from the surface.
+ *
+ * Zod strips unknown keys, so deleting a field outright would make a template
+ * still carrying it save "successfully" with that field quietly gone — the
+ * exact silent-data-loss mode the lossless Code view was built to end. A
+ * removed field therefore stays declared and fails loudly with a migration
+ * message: absent is fine, present is an actionable error.
+ *
+ * The `unknown` in the inferred output type is inert — every consumer maps
+ * template fields across to Prisma explicitly rather than spreading the parsed
+ * object, and a present value never reaches the output because it throws first.
+ */
+export function removedField(message: string) {
+  return z
+    .unknown()
+    .optional()
+    .superRefine((value, ctx) => {
+      if (value !== undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    });
+}
+
 // Template string pattern: allows a single, complete {{params.key-name}} reference.
 // Anchored so concatenation like "80; {{params.x}}" or "{{params.a}}{{params.b}}"
 // is rejected — anything else would flow into Number()/Docker/HAProxy as NaN
@@ -569,9 +593,12 @@ export const stackServiceCommonFieldsSchema = z.object({
   // Symbolic reference to a vault.appRoles[].name declared in the same draft
   // / template. Resolved to a concrete vaultAppRoleId at apply time.
   vaultAppRoleRef: z.string().min(1).optional(),
-  // Symbolic reference to a nats.credentials[].name declared in the same draft
-  // / template. Resolved to a concrete natsCredentialId at apply time.
-  natsCredentialRef: z.string().min(1).optional(),
+  // Removed: bound a service to a `nats.credentials[]` entry from the old
+  // low-level surface. Services now bind to a role (`natsRole`), which
+  // materializes a prefix-isolated credential profile at apply time.
+  natsCredentialRef: removedField(
+    "services[].natsCredentialRef was removed — bind the service to a role instead: declare the role under nats.roles[] and set services[].natsRole to its name.",
+  ),
   // Symbolic reference to a nats.roles[].name. Resolved at apply time to a
   // materialized NatsCredentialProfile (subjectPrefix-prepended permissions).
   natsRole: z.string().min(1).optional(),

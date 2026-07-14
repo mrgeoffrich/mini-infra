@@ -1,4 +1,5 @@
 import {
+  JOB_HISTORY_STREAM_PREFIX,
   JobPoolSubject,
   jobHistoryStreamName,
   type JobPoolConfig,
@@ -134,7 +135,7 @@ export async function pruneOrphanJobPoolStreams(
   desiredStreamNames: Set<string>,
 ): Promise<{ accountId: string | null; orphanStreamNames: string[] }> {
   const existingStreams = await prisma.natsStream.findMany({
-    where: { stackId, name: { startsWith: 'JobHistory-' } },
+    where: { stackId, name: { startsWith: JOB_HISTORY_STREAM_PREFIX } },
   });
   const orphans = existingStreams.filter((s) => !desiredStreamNames.has(s.name));
   if (orphans.length === 0) return { accountId: null, orphanStreamNames: [] };

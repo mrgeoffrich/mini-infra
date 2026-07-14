@@ -539,10 +539,10 @@ Declaring both `tailscale-ssh` and `tailscale-web` on the same service merges th
 The `nats` section lets a stack template declare its NATS topology safely
 without hand-rolling NKey/JWT minting. Mini Infra materializes the
 declarations into `NatsCredentialProfile` rows at apply time and binds them
-to services via the symbolic refs below. This section is **separate** from
-the low-level `accounts` / `credentials` / `streams` / `consumers` shape used
-by built-in system templates — mixing the two within one template is
-rejected at validation time. App templates use the role/signer surface.
+to services via the symbolic refs below. The role/signer surface is the **only**
+NATS authoring surface — system and user templates alike. (An earlier low-level
+`accounts` / `credentials` / `streams` / `consumers` shape has been removed; see
+the note under [Service bindings](#service-bindings).)
 
 ### `nats.subjectPrefix`
 
@@ -636,9 +636,22 @@ at apply time:
 | `services[].natsRole: <name>` | Binds `StackService.natsCredentialId` to the materialized role profile. The injector (`nats-credential-injector.ts`) auto-injects `NATS_CREDS` and `NATS_URL` env vars. |
 | `services[].natsSigner: <name>` | Auto-injects `NATS_SIGNER_SEED` env var into the service. Coexists with `natsRole` — a manager service typically has both. |
 
-A service with both `natsRole` and `natsCredentialRef` (legacy) prefers the
-role binding — but the validator rejects mixing the two surfaces in one
-template, so this only applies in degenerate / corrupted-template states.
+> **Removed:** an earlier low-level surface — `nats.accounts[]`,
+> `nats.credentials[]`, top-level `nats.streams[]` / `nats.consumers[]`, and the
+> per-service `natsCredentialRef` binding — let a template declare NATS objects
+> directly, with absolute subjects against a named account. It has been removed:
+> roles replaced it, because subjects written *relative* to `nats.subjectPrefix`
+> are what make per-stack isolation enforceable rather than a naming convention.
+>
+> A template still carrying any of those keys is **rejected** with a message
+> naming its replacement (it is not silently ignored). To migrate: declare a
+> `nats.roles[]` entry, move each credential's subjects onto the role as
+> prefix-relative `publish` / `subscribe`, nest streams and consumers under the
+> owning role, and point the service at it with `natsRole`.
+>
+> This applies only to *template authoring*. NATS accounts, streams and
+> consumers still exist as runtime objects and are managed under **Messaging**
+> (`/api/nats`).
 
 ### Worked example (slackbot-style topology)
 

@@ -202,7 +202,12 @@ describe('POST /api/stack-templates/:templateId/draft — NATS Phase 1 persisten
     expect(svc?.natsSigner).toBe('minter');
   });
 
-  it('returns 400 when legacy `nats.credentials` and new `nats.roles` are both declared (mixing rule)', async () => {
+  it('returns 400 for the removed low-level NATS surface rather than silently stripping it', async () => {
+    // The HTTP boundary is the one that matters here: Zod strips unknown keys,
+    // so if the removed sections were simply deleted from the schema this POST
+    // would return 200 with the NATS section quietly gone — a template that
+    // looks saved but lost its messaging config. Assert the 400, and that the
+    // message tells the author where the shape moved to.
     const templateId = await createUserTemplateRow();
 
     const res = await supertest(buildApp())
@@ -216,12 +221,38 @@ describe('POST /api/stack-templates/:templateId/draft — NATS Phase 1 persisten
           credentials: [
             { name: 'cred', account: 'app', publishAllow: ['x'], subscribeAllow: ['y'] },
           ],
-          roles: [{ name: 'gateway', publish: ['x'] }],
         },
       });
 
     expect(res.status).toBe(400);
     const issueMessages = (res.body.issues as Array<{ message: string }> | undefined)?.map((i) => i.message) ?? [];
-    expect(issueMessages.join('|')).toContain('cannot be declared in the same template');
+    expect(issueMessages.join('|')).toContain('declare nats.roles[] instead');
+  });
+
+  it('rejects services[].natsCredentialRef at the HTTP boundary', async () => {
+    const templateId = await createUserTemplateRow();
+
+    const res = await supertest(buildApp())
+      .post(`/api/stack-templates/${templateId}/draft`)
+      .send({
+        networks: [],
+        volumes: [],
+        services: [
+          {
+            serviceName: 'manager',
+            serviceType: 'Stateful',
+            dockerImage: 'app',
+            dockerTag: 'latest',
+            containerConfig: {},
+            dependsOn: [],
+            order: 0,
+            natsCredentialRef: 'cred',
+          },
+        ],
+      });
+
+    expect(res.status).toBe(400);
+    const issueMessages = (res.body.issues as Array<{ message: string }> | undefined)?.map((i) => i.message) ?? [];
+    expect(issueMessages.join('|')).toContain('services[].natsCredentialRef was removed');
   });
 });

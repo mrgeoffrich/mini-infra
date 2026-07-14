@@ -59,6 +59,7 @@ type SerializableStack = {
   resourceInputs?: unknown;
   templateId?: string | null;
   templateVersion?: number | null;
+  templateVersionId?: string | null;
   template?: { source?: string; currentVersion?: { version: number } | null } | null;
   tlsCertificates?: unknown;
   dnsRecords?: unknown;
@@ -142,6 +143,12 @@ export function serializeStack(
     resourceInputs: stack.resourceInputs ?? [],
     templateId: stack.templateId ?? null,
     templateVersion: stack.templateVersion ?? null,
+    // The FK, not just the version number — a targeted upgrade needs the id, and
+    // promotion between environments is "install the version this other
+    // environment already has". Set explicitly: it was previously reaching the
+    // client only by accident, riding the `...rest` spread on queries that
+    // happened to use `include` rather than a narrowing `select`.
+    templateVersionId: stack.templateVersionId ?? null,
     templateSource: (stack.template?.source as 'system' | 'user' | undefined) ?? null,
     templateCurrentVersion: stack.template?.currentVersion?.version ?? null,
     templateUpdateAvailable,
@@ -212,7 +219,6 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
     jobPoolConfig: s.jobPoolConfig ? (s.jobPoolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     vaultAppRoleId: s.vaultAppRoleId ?? null,
     natsCredentialId: s.natsCredentialId ?? null,
-    natsCredentialRef: s.natsCredentialRef ?? null,
     addons: s.addons ? (s.addons as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
   };
 }
@@ -405,7 +411,6 @@ export async function resolveServiceConfigs(
     vaultAppRoleId?: string | null;
     vaultAppRoleRef?: string | null;
     natsCredentialId?: string | null;
-    natsCredentialRef?: string | null;
     addons?: unknown;
   }>,
   templateContext: ReturnType<typeof buildTemplateContext>,
@@ -537,7 +542,6 @@ export function toServiceDefinition(svc: {
   vaultAppRoleId?: string | null;
   vaultAppRoleRef?: string | null;
   natsCredentialId?: string | null;
-  natsCredentialRef?: string | null;
   addons?: unknown;
 }): StackServiceDefinition {
   return {
@@ -557,7 +561,6 @@ export function toServiceDefinition(svc: {
     vaultAppRoleId: svc.vaultAppRoleId ?? undefined,
     vaultAppRoleRef: svc.vaultAppRoleRef ?? undefined,
     natsCredentialId: svc.natsCredentialId ?? undefined,
-    natsCredentialRef: svc.natsCredentialRef ?? undefined,
     addons:
       svc.addons && typeof svc.addons === 'object'
         ? (svc.addons as Record<string, unknown>)

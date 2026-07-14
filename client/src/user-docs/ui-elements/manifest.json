@@ -30,6 +30,12 @@
           "file": "client/src/app/applications/[id]/_components/environments-panel.tsx"
         },
         {
+          "id": "application-promote-action",
+          "label": "Application Promote Action",
+          "elementType": "Button",
+          "file": "client/src/app/applications/[id]/_components/environments-panel.tsx"
+        },
+        {
           "id": "stack-history-restore-button",
           "label": "Stack History Restore Button",
           "elementType": "Button",
@@ -442,6 +448,17 @@
         }
       ]
     },
+    "/stack-templates": {
+      "title": "Stack Templates",
+      "elements": [
+        {
+          "id": "import-compose-button",
+          "label": "Import Compose Button",
+          "elementType": "Button",
+          "file": "client/src/app/stack-templates/page.tsx"
+        }
+      ]
+    },
     "/stacks": {
       "title": "Stacks",
       "elements": [
@@ -746,6 +763,18 @@
       "file": "client/src/components/site-header.tsx"
     },
     {
+      "id": "compose-import-input",
+      "label": "Compose Import Input",
+      "elementType": "Textarea",
+      "file": "client/src/components/stack-templates/import-compose-dialog.tsx"
+    },
+    {
+      "id": "compose-import-name",
+      "label": "Compose Import Name",
+      "elementType": "Input",
+      "file": "client/src/components/stack-templates/import-compose-dialog.tsx"
+    },
+    {
       "id": "install-template-dialog",
       "label": "Install Template Dialog",
       "elementType": "DialogContent",
@@ -798,6 +827,12 @@
       "label": "Stack Deployment Phase",
       "elementType": "div",
       "file": "client/src/components/stacks/DeploymentPhaseTrail.tsx"
+    },
+    {
+      "id": "promote-target-environment",
+      "label": "Promote Target Environment",
+      "elementType": "SelectTrigger",
+      "file": "client/src/components/stacks/PromoteToEnvironmentDialog.tsx"
     },
     {
       "id": "rotate-inputs-dialog",

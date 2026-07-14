@@ -117,7 +117,6 @@ export function mapServiceInfoToDefinition(
     vaultAppRoleId: svc.vaultAppRoleId,
     vaultAppRoleRef: svc.vaultAppRoleRef,
     natsCredentialId: svc.natsCredentialId,
-    natsCredentialRef: svc.natsCredentialRef,
     natsRole: svc.natsRole,
     natsSigner: svc.natsSigner,
     addons: svc.addons ?? undefined,

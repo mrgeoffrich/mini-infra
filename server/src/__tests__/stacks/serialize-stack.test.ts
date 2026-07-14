@@ -45,6 +45,29 @@ function makeStack(overrides: Record<string, unknown> = {}): Parameters<typeof s
   };
 }
 
+describe('serializeStack — templateVersionId', () => {
+  // Promotion between environments is "install the version that environment
+  // already has", so it needs the version *id*, not the version number. The id
+  // used to reach the client only by accident — it rode the `...rest` row spread,
+  // which meant it appeared on queries built with `include` and vanished on any
+  // query narrowed with `select`. These pin it as a deliberate output field.
+  it('serializes templateVersionId when the stack has a template version installed', () => {
+    const result = serializeStack(
+      makeStack({ templateId: 'tpl-1', templateVersion: 3, templateVersionId: 'ver-3' }),
+    );
+
+    expect(result.templateVersionId).toBe('ver-3');
+  });
+
+  it('serializes templateVersionId as null for a templateless stack', () => {
+    // Explicitly null rather than absent — an ad-hoc stack has no version to
+    // promote, and the client distinguishes "no template" from "field missing".
+    const result = serializeStack(makeStack());
+
+    expect(result.templateVersionId).toBeNull();
+  });
+});
+
 describe('serializeStack — field stripping and inclusion', () => {
   it('strips lastAppliedVaultSnapshot (encrypted blob) from output', () => {
     const snapshot = emptySnapshotV2();

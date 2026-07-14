@@ -14,6 +14,7 @@ import {
   stackServiceCommonFieldsSchema,
   refineAddonsBlock,
   refinePoolAndJobPoolConstraints,
+  removedField,
 } from "./schemas";
 import {
   translateUnifiedNetworkDeclarations,
@@ -25,16 +26,13 @@ import {
   templateVaultPolicySchema,
   templateVaultAppRoleSchema,
   templateVaultKvSchema,
-  templateNatsAccountSchema,
-  templateNatsCredentialSchema,
-  templateNatsStreamSchema,
-  templateNatsConsumerSchema,
   templateNatsRoleSchema,
   templateNatsSignerSchema,
   templateNatsImportSchema,
   templateNatsSubjectPrefixSchema,
   natsRelativeSubjectSchema,
   validateNatsSectionShape,
+  REMOVED_NATS_TEMPLATE_FIELDS,
 } from "./stack-template-schemas";
 import type { StackTemplateConfigFileInput, StackTemplatePrerequisite } from "@mini-infra/types";
 import { STACK_SERVICE_TYPES } from "@mini-infra/types";
@@ -94,19 +92,21 @@ const templateVaultSchema = z.object({
 });
 
 const templateNatsSchema = z.object({
-  // App-author surface (Phase 1 additions). Reuse canonical strict shapes
-  // from stack-template-schemas.ts so file-loaded templates can't sneak in
-  // wildcards or `$SYS.*` prefixes that the HTTP draft path rejects.
+  // Reuse canonical strict shapes from stack-template-schemas.ts so file-loaded
+  // templates can't sneak in wildcards or `$SYS.*` prefixes that the HTTP draft
+  // path rejects.
   subjectPrefix: templateNatsSubjectPrefixSchema.optional(),
   roles: z.array(templateNatsRoleSchema).optional(),
   signers: z.array(templateNatsSignerSchema).optional(),
   exports: z.array(natsRelativeSubjectSchema).optional(),
   imports: z.array(templateNatsImportSchema).optional(),
-  // Legacy / system surface
-  accounts: z.array(templateNatsAccountSchema).optional(),
-  credentials: z.array(templateNatsCredentialSchema).optional(),
-  streams: z.array(templateNatsStreamSchema).optional(),
-  consumers: z.array(templateNatsConsumerSchema).optional(),
+
+  // Removed — rejected here too, so a bundled template file can't reintroduce
+  // the old surface through a path the HTTP schema no longer accepts.
+  accounts: removedField(REMOVED_NATS_TEMPLATE_FIELDS.accounts),
+  credentials: removedField(REMOVED_NATS_TEMPLATE_FIELDS.credentials),
+  streams: removedField(REMOVED_NATS_TEMPLATE_FIELDS.streams),
+  consumers: removedField(REMOVED_NATS_TEMPLATE_FIELDS.consumers),
 });
 
 const postInstallActionSchema = z.object({
@@ -142,9 +142,6 @@ export const templateFileSchema = z.object({
   const inputNames = new Set((data.inputs ?? []).map((i) => i.name));
   const policyNames = new Set((data.vault?.policies ?? []).map((p) => p.name));
   const appRoleNames = new Set((data.vault?.appRoles ?? []).map((a) => a.name));
-  const natsAccountNames = new Set((data.nats?.accounts ?? []).map((a) => a.name));
-  const natsCredentialNames = new Set((data.nats?.credentials ?? []).map((c) => c.name));
-  const natsStreamNames = new Set((data.nats?.streams ?? []).map((s) => s.name));
 
   // Unique input names
   const seenInputNames = new Set<string>();
@@ -219,47 +216,10 @@ export const templateFileSchema = z.object({
     }
   }
 
-  for (const credential of data.nats?.credentials ?? []) {
-    if (!natsAccountNames.has(credential.account)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `NATS credential '${credential.name}' references unknown account '${credential.account}' (defined: ${formatNameSet(natsAccountNames)})`,
-        path: ["nats", "credentials"],
-      });
-    }
-  }
-
-  for (const stream of data.nats?.streams ?? []) {
-    if (!natsAccountNames.has(stream.account)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `NATS stream '${stream.name}' references unknown account '${stream.account}' (defined: ${formatNameSet(natsAccountNames)})`,
-        path: ["nats", "streams"],
-      });
-    }
-  }
-
-  for (const consumer of data.nats?.consumers ?? []) {
-    if (!natsStreamNames.has(consumer.stream)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `NATS consumer '${consumer.name}' references unknown stream '${consumer.stream}' (defined: ${formatNameSet(natsStreamNames)})`,
-        path: ["nats", "consumers"],
-      });
-    }
-  }
-
   const natsRoleNames = new Set((data.nats?.roles ?? []).map((r) => r.name));
   const natsSignerNames = new Set((data.nats?.signers ?? []).map((s) => s.name));
 
   for (const svc of data.services) {
-    if (svc.natsCredentialRef !== undefined && !natsCredentialNames.has(svc.natsCredentialRef)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' natsCredentialRef '${svc.natsCredentialRef}' references unknown credential (defined: ${formatNameSet(natsCredentialNames)})`,
-        path: ["services"],
-      });
-    }
     if (svc.natsRole !== undefined && !natsRoleNames.has(svc.natsRole)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -354,7 +314,6 @@ export interface LoadedTemplate {
       order: number;
       routing?: z.infer<typeof stackServiceRoutingSchema>;
       vaultAppRoleRef?: string;
-      natsCredentialRef?: string;
       natsRole?: string;
       natsSigner?: string;
       addons?: Record<string, unknown>;
@@ -498,7 +457,6 @@ export function loadTemplateFromObject(
       order: svc.order,
       routing: svc.routing,
       vaultAppRoleRef: svc.vaultAppRoleRef,
-      natsCredentialRef: svc.natsCredentialRef,
       natsRole: svc.natsRole,
       natsSigner: svc.natsSigner,
       addons: svc.addons,

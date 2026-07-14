@@ -116,6 +116,9 @@ export * from "./tailscale";
 // Pool-instance addon label keys
 export * from "./pool-addons";
 
+// Docker Compose → stack template mapping (pure; the YAML parser lives with the caller)
+export * from "./compose-import";
+
 // API route registry (ApiBase/ApiRoute/ALL_API_ROUTES)
 export * from "./api-routes";
 

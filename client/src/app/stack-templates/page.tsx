@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconTemplate, IconPlus } from "@tabler/icons-react";
+import { IconTemplate, IconPlus, IconFileImport } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,11 +14,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { TemplateTable } from "@/components/stack-templates/template-table";
 import { CreateTemplateDialog } from "@/components/stack-templates/create-template-dialog";
+import { ImportComposeDialog } from "@/components/stack-templates/import-compose-dialog";
 import { useStackTemplates } from "@/hooks/use-stack-templates";
 import type { StackTemplateSource, StackTemplateScope } from "@mini-infra/types";
 
 export default function StackTemplatesPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [source, setSource] = useState<StackTemplateSource | undefined>(undefined);
   const [scope, setScope] = useState<StackTemplateScope | undefined>(undefined);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -47,10 +49,21 @@ export default function StackTemplatesPage() {
               </p>
             </div>
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)}>
-            <IconPlus className="h-4 w-4 mr-2" />
-            Create Template
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Most people arrive holding a compose file — meet them there. */}
+            <Button
+              variant="outline"
+              onClick={() => setImportDialogOpen(true)}
+              data-tour="import-compose-button"
+            >
+              <IconFileImport className="h-4 w-4 mr-2" />
+              Import from Compose
+            </Button>
+            <Button onClick={() => setCreateDialogOpen(true)}>
+              <IconPlus className="h-4 w-4 mr-2" />
+              Create Template
+            </Button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -139,6 +152,8 @@ export default function StackTemplatesPage() {
           </>
         )}
       </div>
+
+      <ImportComposeDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
 
       <CreateTemplateDialog
         open={createDialogOpen}

@@ -521,7 +521,6 @@ export interface StackService {
   vaultAppRoleId: string | null;
   lastAppliedVaultAppRoleId: string | null;
   natsCredentialId: string | null;
-  natsCredentialRef: string | null;
   poolManagementTokenHash: string | null;
   /** Service Addons authoring block; null when no addons declared. */
   addons: Record<string, unknown> | null;
@@ -544,6 +543,17 @@ export interface StackInfo {
   builtinVersion: number | null;
   templateId: string | null;
   templateVersion: number | null;
+  /**
+   * FK to the exact `StackTemplateVersion` this stack has installed.
+   *
+   * `templateVersion` is only the version *number*, which is all the UI needs to
+   * display — but a targeted upgrade (`POST /stacks/:id/upgrade` with
+   * `targetVersionId`) needs the id, and promotion between environments is
+   * exactly "install the version that environment already has". Serialized
+   * explicitly rather than left to ride along on the row spread, which only
+   * happened to reach the client on queries that used `include` over `select`.
+   */
+  templateVersionId: string | null;
   /** 'system' (infrastructure) or 'user' (application); null for templateless/manual stacks. Present when the query includes the template relation. */
   templateSource?: 'system' | 'user' | null;
   /** The template's current published version number — for showing installed-vs-latest. Present when the query includes the template relation. */
@@ -833,9 +843,6 @@ export interface StackServiceDefinition {
    *  Resolved to a concrete vaultAppRoleId at apply time. */
   vaultAppRoleRef?: string | null;
   natsCredentialId?: string | null;
-  /** Symbolic reference to a nats.credentials[].name in the owning template draft.
-   *  Resolved to a concrete natsCredentialId at apply time. */
-  natsCredentialRef?: string | null;
   /** Symbolic reference to a nats.roles[].name. Resolved at apply time to a
    *  materialized NatsCredentialProfile (auto-prefixed permissions). */
   natsRole?: string | null;

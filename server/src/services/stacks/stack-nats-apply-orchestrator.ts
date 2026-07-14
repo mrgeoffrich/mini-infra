@@ -16,19 +16,16 @@ import { getLogger } from "../../lib/logger-factory";
 import { ConflictError, InternalError, NotFoundError, ValidationError } from "../../lib/errors";
 import {
   ErrorCode,
+  JOB_HISTORY_STREAM_PREFIX,
   type EnvironmentNetworkType,
   type EnvironmentType,
   type StackParameterDefinition,
   type StackParameterValue,
-  type TemplateNatsAccount,
-  type TemplateNatsConsumer,
-  type TemplateNatsCredential,
   type TemplateNatsImport,
   type TemplateNatsRole,
   type TemplateNatsRoleConsumer,
   type TemplateNatsRoleStream,
   type TemplateNatsSigner,
-  type TemplateNatsStream,
 } from "@mini-infra/types";
 
 export type NatsApplyPhaseStatus = "applied" | "noop" | "skipped" | "error";
@@ -132,13 +129,6 @@ async function runStackNatsApplyPhaseUnlocked(
   const templateVersion = await prisma.stackTemplateVersion.findFirst({
     where: { templateId: stack.templateId, version: stack.templateVersion },
     select: {
-      natsAccounts: true,
-      natsCredentials: true,
-      natsStreams: true,
-      natsConsumers: true,
-      // Phase 1 fields (app-author surface). Phase 3 materializes `roles`
-      // and reads `subjectPrefix`; Phase 4 will use `signers`; Phase 5 will
-      // use `imports`/`exports`.
       natsSubjectPrefix: true,
       natsRoles: true,
       natsSigners: true,
@@ -147,7 +137,6 @@ async function runStackNatsApplyPhaseUnlocked(
       services: {
         select: {
           serviceName: true,
-          natsCredentialRef: true,
           natsRole: true,
           natsSigner: true,
         },
@@ -156,24 +145,11 @@ async function runStackNatsApplyPhaseUnlocked(
   });
   if (!templateVersion) return { status: "skipped" };
 
-  const accounts = (templateVersion.natsAccounts as TemplateNatsAccount[] | null) ?? [];
-  const credentials = (templateVersion.natsCredentials as TemplateNatsCredential[] | null) ?? [];
-  const streams = (templateVersion.natsStreams as TemplateNatsStream[] | null) ?? [];
-  const consumers = (templateVersion.natsConsumers as TemplateNatsConsumer[] | null) ?? [];
   const roles = (templateVersion.natsRoles as TemplateNatsRole[] | null) ?? [];
   const signers = (templateVersion.natsSigners as TemplateNatsSigner[] | null) ?? [];
   const exportsRelative = (templateVersion.natsExports as string[] | null) ?? [];
   const imports = (templateVersion.natsImports as TemplateNatsImport[] | null) ?? [];
-  // Phase 3 expands the guard to include the new app-author surface so
-  // pure-roles templates still trigger the apply phase. Mixing is rejected
-  // at validation (Phase 1's `validateNatsSectionShape`), so legacy and new
-  // paths run side-by-side without colliding. Phase 5 adds exports/imports
-  // to the guard for cross-stack subject sharing.
   const hasNats =
-    accounts.length > 0 ||
-    credentials.length > 0 ||
-    streams.length > 0 ||
-    consumers.length > 0 ||
     roles.length > 0 ||
     signers.length > 0 ||
     exportsRelative.length > 0 ||
@@ -238,171 +214,21 @@ async function runStackNatsApplyPhaseUnlocked(
     );
 
     const service = getNatsControlPlaneService(prisma);
-    const accountIdByName = new Map<string, string>();
-    const credentialIdByName = new Map<string, string>();
-    const streamIdByName = new Map<string, string>();
     const resources: Array<{ type: string; concreteName: string; scope?: string }> = [];
 
-    await service.ensureDefaultAccount();
-
-    for (const account of accounts) {
-      const name = concreteName(render(account.name, ctx), account.scope, stack.name, stack.environment?.name ?? null);
-      const existing = await prisma.natsAccount.findUnique({ where: { name } });
-      const row = existing
-        ? await prisma.natsAccount.update({
-            where: { id: existing.id },
-            data: {
-              displayName: account.displayName ?? name,
-              description: account.description ?? null,
-              updatedById: opts.triggeredBy ?? null,
-            },
-          })
-        : await prisma.natsAccount.create({
-            data: {
-              name,
-              displayName: account.displayName ?? name,
-              description: account.description ?? null,
-              seedKvPath: `shared/nats-accounts/${name}`,
-              createdById: opts.triggeredBy ?? null,
-              updatedById: opts.triggeredBy ?? null,
-            },
-          });
-      accountIdByName.set(account.name, row.id);
-      resources.push({ type: "account", concreteName: name, scope: account.scope });
-    }
-
-    for (const credential of credentials) {
-      const accountId = accountIdByName.get(credential.account)
-        ?? (await prisma.natsAccount.findUnique({ where: { name: credential.account } }))?.id;
-      if (!accountId) {
-        throw new NotFoundError(
-          ErrorCode.NATS_ACCOUNT_NOT_FOUND,
-          `NATS credential '${credential.name}' references unknown account '${credential.account}'`,
-          {
-            resource: { type: "natsAccount", name: credential.account },
-            action: "Declare the account in the template's nats.accounts[] before referencing it.",
-          },
-        );
-      }
-      const name = concreteName(render(credential.name, ctx), credential.scope, stack.name, stack.environment?.name ?? null);
-      const existing = await prisma.natsCredentialProfile.findUnique({ where: { name } });
-      const data = {
-        displayName: credential.displayName ?? name,
-        description: credential.description ?? null,
-        accountId,
-        publishAllow: credential.publishAllow.map((s) => render(s, ctx)) as unknown as Prisma.InputJsonValue,
-        subscribeAllow: credential.subscribeAllow.map((s) => render(s, ctx)) as unknown as Prisma.InputJsonValue,
-        ttlSeconds: credential.ttlSeconds ?? 3600,
-        updatedById: opts.triggeredBy ?? null,
-      };
-      const row = existing
-        ? await prisma.natsCredentialProfile.update({ where: { id: existing.id }, data })
-        : await prisma.natsCredentialProfile.create({
-            data: {
-              name,
-              ...data,
-              createdById: opts.triggeredBy ?? null,
-            },
-          });
-      credentialIdByName.set(credential.name, row.id);
-      resources.push({ type: "credential", concreteName: name, scope: credential.scope });
-    }
-
-    for (const stream of streams) {
-      const accountId = accountIdByName.get(stream.account)
-        ?? (await prisma.natsAccount.findUnique({ where: { name: stream.account } }))?.id;
-      if (!accountId) {
-        throw new NotFoundError(
-          ErrorCode.NATS_ACCOUNT_NOT_FOUND,
-          `NATS stream '${stream.name}' references unknown account '${stream.account}'`,
-          {
-            resource: { type: "natsAccount", name: stream.account },
-            action: "Declare the account in the template's nats.accounts[] before referencing it.",
-          },
-        );
-      }
-      const name = concreteName(render(stream.name, ctx), stream.scope, stack.name, stack.environment?.name ?? null);
-      const existing = await prisma.natsStream.findUnique({ where: { name } });
-      const data = {
-        accountId,
-        description: stream.description ?? null,
-        subjects: stream.subjects.map((s) => render(s, ctx)) as unknown as Prisma.InputJsonValue,
-        retention: stream.retention ?? "limits",
-        storage: stream.storage ?? "file",
-        maxMsgs: stream.maxMsgs ?? null,
-        maxBytes: stream.maxBytes ?? null,
-        maxAgeSeconds: stream.maxAgeSeconds ?? null,
-        updatedById: opts.triggeredBy ?? null,
-      };
-      const row = existing
-        ? await prisma.natsStream.update({ where: { id: existing.id }, data })
-        : await prisma.natsStream.create({
-            data: {
-              name,
-              ...data,
-              createdById: opts.triggeredBy ?? null,
-            },
-          });
-      streamIdByName.set(stream.name, row.id);
-      resources.push({ type: "stream", concreteName: name, scope: stream.scope });
-    }
-
-    for (const consumer of consumers) {
-      const streamId = streamIdByName.get(consumer.stream)
-        ?? (await prisma.natsStream.findUnique({ where: { name: consumer.stream } }))?.id;
-      if (!streamId) {
-        throw new NotFoundError(
-          ErrorCode.NATS_STREAM_NOT_FOUND,
-          `NATS consumer '${consumer.name}' references unknown stream '${consumer.stream}'`,
-          {
-            resource: { type: "natsStream", name: consumer.stream },
-            action: "Declare the stream in the template's nats.streams[] before referencing it.",
-          },
-        );
-      }
-      const name = concreteName(render(consumer.name, ctx), consumer.scope, stack.name, stack.environment?.name ?? null);
-      const existing = await prisma.natsConsumer.findFirst({ where: { streamId, name } });
-      const data = {
-        durableName: consumer.durableName ? render(consumer.durableName, ctx) : name,
-        description: consumer.description ?? null,
-        filterSubject: consumer.filterSubject ? render(consumer.filterSubject, ctx) : null,
-        deliverPolicy: consumer.deliverPolicy ?? "all",
-        ackPolicy: consumer.ackPolicy ?? "explicit",
-        maxDeliver: consumer.maxDeliver ?? null,
-        ackWaitSeconds: consumer.ackWaitSeconds ?? null,
-        updatedById: opts.triggeredBy ?? null,
-      };
-      if (existing) {
-        await prisma.natsConsumer.update({ where: { id: existing.id }, data });
-      } else {
-        await prisma.natsConsumer.create({
-          data: {
-            streamId,
-            name,
-            ...data,
-            createdById: opts.triggeredBy ?? null,
-          },
-        });
-      }
-      resources.push({ type: "consumer", concreteName: name, scope: consumer.scope });
-    }
-
-    // ─── Phase 3 + 5: app-author roles materialization + cross-stack imports ──
-    // Roles share the system-default account (prefix-only isolation, see
-    // design §2.1 decision 1). Each role becomes a NatsCredentialProfile
-    // with `<resolvedSubjectPrefix>.` prepended to every publish/subscribe
-    // entry, plus `_INBOX.>` injection per the role's `inboxAuto` setting.
-    // The mixing rule (Phase 1) prevents `roles` and legacy `credentials`
-    // from coexisting in one template, so the maps below stay disjoint.
+    // ─── Roles materialization + cross-stack imports ──
+    // Roles share the system-default account; isolation comes from the subject
+    // prefix, not from account separation (design §2.1 decision 1). Each role
+    // becomes a NatsCredentialProfile with `<resolvedSubjectPrefix>.` prepended
+    // to every publish/subscribe entry, plus `_INBOX.>` injection per the
+    // role's `inboxAuto` setting.
     //
-    // Phase 5 adds cross-stack imports: for each `nats.imports[]` entry, the
-    // producer's resolved exports are looked up and the matched subjects
-    // get appended (in absolute form) to the subscribe list of every role
-    // named in `forRoles`. The producer's snapshot (`lastAppliedNatsSnapshot`)
-    // is the source of truth — written by the producer's own apply phase.
-    let resolvedSubjectPrefix: string | null = null;
+    // Cross-stack imports: for each `nats.imports[]` entry, the producer's
+    // resolved exports are looked up and the matched subjects get appended (in
+    // absolute form) to the subscribe list of every role named in `forRoles`.
+    // The producer's snapshot (`lastAppliedNatsSnapshot`) is the source of
+    // truth — written by the producer's own apply phase.
     const roleCredentialIdByName = new Map<string, string>();
-    let resolvedExports: string[] = [];
     const renderedRoleProfileNames = new Set<string>();
     const renderedSignerNames = new Set<string>();
     // Stack-scoped (role-derived) JetStream resources. Names are namespaced
@@ -418,147 +244,145 @@ async function runStackNatsApplyPhaseUnlocked(
     // path only adds/updates from the current DB rows; it has no signal
     // for "this stream used to exist and should now be gone").
     let orphanStreamCleanup: { accountId: string; orphanStreamNames: string[] } | null = null;
-    if (roles.length > 0 || signers.length > 0 || exportsRelative.length > 0 || imports.length > 0) {
-      const defaultAccount = await service.ensureDefaultAccount();
-      resolvedSubjectPrefix = await resolveAndValidateSubjectPrefix({
-        prisma,
-        rawPrefix: templateVersion.natsSubjectPrefix ?? null,
-        ctx,
-        stackId,
-        templateId: stack.templateId,
-      });
+    const defaultAccount = await service.ensureDefaultAccount();
+    const resolvedSubjectPrefix = await resolveAndValidateSubjectPrefix({
+      prisma,
+      rawPrefix: templateVersion.natsSubjectPrefix ?? null,
+      ctx,
+      stackId,
+      templateId: stack.templateId,
+    });
 
-      // Resolve our own exports for snapshot consumption by other stacks.
-      resolvedExports = exportsRelative.map((s) => `${resolvedSubjectPrefix}.${s}`);
+    // Resolve our own exports for snapshot consumption by other stacks.
+    const resolvedExports = exportsRelative.map((s) => `${resolvedSubjectPrefix}.${s}`);
 
-      // Resolve imports: per-role additional subscribe subjects (absolute,
-      // already prefixed by the *producer's* prefix). Validate fromStack
-      // exists + is applied + actually exports a matching pattern.
-      const declaredRoleNames = new Set(roles.map((r) => r.name));
-      const importedSubscribeByRole = new Map<string, string[]>();
-      for (const imp of imports) {
-        for (const r of imp.forRoles) {
-          if (!declaredRoleNames.has(r)) {
-            // Phase 1 validator should have caught this; fail loud at apply
-            // if a corrupt template made it through.
-            throw new InternalError(`NATS apply: imports[].forRoles references undeclared role '${r}'`);
-          }
-        }
-        const resolved = await resolveImport({
-          prisma,
-          imp,
-          consumerStackId: stackId,
-          consumerStackName: stack.name,
-          consumerEnvironmentId: stack.environmentId,
-        });
-        for (const r of imp.forRoles) {
-          const list = importedSubscribeByRole.get(r) ?? [];
-          list.push(...resolved);
-          importedSubscribeByRole.set(r, list);
+    // Resolve imports: per-role additional subscribe subjects (absolute,
+    // already prefixed by the *producer's* prefix). Validate fromStack
+    // exists + is applied + actually exports a matching pattern.
+    const declaredRoleNames = new Set(roles.map((r) => r.name));
+    const importedSubscribeByRole = new Map<string, string[]>();
+    for (const imp of imports) {
+      for (const r of imp.forRoles) {
+        if (!declaredRoleNames.has(r)) {
+          // Phase 1 validator should have caught this; fail loud at apply
+          // if a corrupt template made it through.
+          throw new InternalError(`NATS apply: imports[].forRoles references undeclared role '${r}'`);
         }
       }
-
-      for (const role of roles) {
-        const profile = await materializeRole({
-          prisma,
-          role,
-          accountId: defaultAccount.id,
-          subjectPrefix: resolvedSubjectPrefix,
-          stackId,
-          stackName: stack.name,
-          triggeredBy: opts.triggeredBy,
-          additionalSubscribeAbsolute: importedSubscribeByRole.get(role.name) ?? [],
-        });
-        roleCredentialIdByName.set(role.name, profile.id);
-        renderedRoleProfileNames.add(profile.name);
-        resources.push({ type: "credential", concreteName: profile.name, scope: "stack" });
-
-        // Phase 6: role-nested JetStream streams + consumers. Declared on
-        // the role, materialized into NatsStream/NatsConsumer rows on the
-        // shared system account with the stack's resolvedSubjectPrefix
-        // prepended to every subject filter. Consumers reference one of
-        // their containing role's streams by relative name; the materializer
-        // resolves that against `roleStreamIdByRoleAndName`. The role's
-        // own credentials retain pub/sub on the role's relative subject
-        // tree, so a service bound to the role can publish into the stream
-        // and consume through any of its consumers without extra grants.
-        for (const stream of role.streams ?? []) {
-          const row = await materializeRoleStream({
-            prisma,
-            roleName: role.name,
-            stream,
-            accountId: defaultAccount.id,
-            subjectPrefix: resolvedSubjectPrefix,
-            stackId,
-            triggeredBy: opts.triggeredBy,
-          });
-          renderedRoleStreamNames.add(row.name);
-          roleStreamIdByRoleAndName.set(`${role.name}.${stream.name}`, row.id);
-          resources.push({ type: "stream", concreteName: row.name, scope: "stack" });
-        }
-        for (const consumer of role.consumers ?? []) {
-          const streamId = roleStreamIdByRoleAndName.get(`${role.name}.${consumer.stream}`);
-          if (!streamId) {
-            // Validator catches this at publish time; defense-in-depth at
-            // apply for corrupt JSON columns or a future schema-drift bug.
-            throw new InternalError(
-              `NATS apply: role '${role.name}' consumer '${consumer.name}' references unknown stream '${consumer.stream}'`,
-            );
-          }
-          const row = await materializeRoleConsumer({
-            prisma,
-            roleName: role.name,
-            consumer,
-            streamId,
-            subjectPrefix: resolvedSubjectPrefix,
-            stackId,
-            triggeredBy: opts.triggeredBy,
-          });
-          resources.push({ type: "consumer", concreteName: row.name, scope: "stack" });
-        }
+      const resolved = await resolveImport({
+        prisma,
+        imp,
+        consumerStackId: stackId,
+        consumerStackName: stack.name,
+        consumerEnvironmentId: stack.environmentId,
+      });
+      for (const r of imp.forRoles) {
+        const list = importedSubscribeByRole.get(r) ?? [];
+        list.push(...resolved);
+        importedSubscribeByRole.set(r, list);
       }
-
-      // Phase 4: signers materialization. Each signer becomes a NatsSigningKey
-      // row + a Vault KV seed. The actual scope-template splice into the
-      // account JWT happens in service.applyConfig() below, which now reads
-      // every NatsSigningKey row and re-issues each affected account's JWT
-      // with the live signing-keys list. The full-resolver propagation then
-      // pushes the new claim via $SYS.REQ.CLAIMS.UPDATE.
-      for (const signer of signers) {
-        const sk = await materializeSigner({
-          prisma,
-          signer,
-          accountId: defaultAccount.id,
-          subjectPrefix: resolvedSubjectPrefix,
-          stackId,
-        });
-        renderedSignerNames.add(signer.name);
-        resources.push({ type: "signing-key", concreteName: sk.publicKey, scope: "stack" });
-      }
-
-      // Diff-and-prune. Run before applyConfig() so the re-issued account
-      // JWT reflects only the live set of signing keys + the orphan profiles
-      // are gone before any service tries to rebind to them. Role-derived
-      // streams are pruned before applyJetStreamResources() (run further
-      // down) so the live JetStream view picks up only the desired set; the
-      // delete also cascades to any consumers (NatsConsumer.streamId FK is
-      // ON DELETE CASCADE).
-      await pruneOrphanRoleProfiles({
-        prisma,
-        stackId,
-        desiredProfileNames: renderedRoleProfileNames,
-      });
-      await pruneOrphanSigningKeys({
-        prisma,
-        stackId,
-        desiredSignerNames: renderedSignerNames,
-      });
-      orphanStreamCleanup = await pruneOrphanRoleStreams({
-        prisma,
-        stackId,
-        desiredStreamNames: renderedRoleStreamNames,
-      });
     }
+
+    for (const role of roles) {
+      const profile = await materializeRole({
+        prisma,
+        role,
+        accountId: defaultAccount.id,
+        subjectPrefix: resolvedSubjectPrefix,
+        stackId,
+        stackName: stack.name,
+        triggeredBy: opts.triggeredBy,
+        additionalSubscribeAbsolute: importedSubscribeByRole.get(role.name) ?? [],
+      });
+      roleCredentialIdByName.set(role.name, profile.id);
+      renderedRoleProfileNames.add(profile.name);
+      resources.push({ type: "credential", concreteName: profile.name, scope: "stack" });
+
+      // Phase 6: role-nested JetStream streams + consumers. Declared on
+      // the role, materialized into NatsStream/NatsConsumer rows on the
+      // shared system account with the stack's resolvedSubjectPrefix
+      // prepended to every subject filter. Consumers reference one of
+      // their containing role's streams by relative name; the materializer
+      // resolves that against `roleStreamIdByRoleAndName`. The role's
+      // own credentials retain pub/sub on the role's relative subject
+      // tree, so a service bound to the role can publish into the stream
+      // and consume through any of its consumers without extra grants.
+      for (const stream of role.streams ?? []) {
+        const row = await materializeRoleStream({
+          prisma,
+          roleName: role.name,
+          stream,
+          accountId: defaultAccount.id,
+          subjectPrefix: resolvedSubjectPrefix,
+          stackId,
+          triggeredBy: opts.triggeredBy,
+        });
+        renderedRoleStreamNames.add(row.name);
+        roleStreamIdByRoleAndName.set(`${role.name}.${stream.name}`, row.id);
+        resources.push({ type: "stream", concreteName: row.name, scope: "stack" });
+      }
+      for (const consumer of role.consumers ?? []) {
+        const streamId = roleStreamIdByRoleAndName.get(`${role.name}.${consumer.stream}`);
+        if (!streamId) {
+          // Validator catches this at publish time; defense-in-depth at
+          // apply for corrupt JSON columns or a future schema-drift bug.
+          throw new InternalError(
+            `NATS apply: role '${role.name}' consumer '${consumer.name}' references unknown stream '${consumer.stream}'`,
+          );
+        }
+        const row = await materializeRoleConsumer({
+          prisma,
+          roleName: role.name,
+          consumer,
+          streamId,
+          subjectPrefix: resolvedSubjectPrefix,
+          stackId,
+          triggeredBy: opts.triggeredBy,
+        });
+        resources.push({ type: "consumer", concreteName: row.name, scope: "stack" });
+      }
+    }
+
+    // Phase 4: signers materialization. Each signer becomes a NatsSigningKey
+    // row + a Vault KV seed. The actual scope-template splice into the
+    // account JWT happens in service.applyConfig() below, which now reads
+    // every NatsSigningKey row and re-issues each affected account's JWT
+    // with the live signing-keys list. The full-resolver propagation then
+    // pushes the new claim via $SYS.REQ.CLAIMS.UPDATE.
+    for (const signer of signers) {
+      const sk = await materializeSigner({
+        prisma,
+        signer,
+        accountId: defaultAccount.id,
+        subjectPrefix: resolvedSubjectPrefix,
+        stackId,
+      });
+      renderedSignerNames.add(signer.name);
+      resources.push({ type: "signing-key", concreteName: sk.publicKey, scope: "stack" });
+    }
+
+    // Diff-and-prune. Run before applyConfig() so the re-issued account
+    // JWT reflects only the live set of signing keys + the orphan profiles
+    // are gone before any service tries to rebind to them. Role-derived
+    // streams are pruned before applyJetStreamResources() (run further
+    // down) so the live JetStream view picks up only the desired set; the
+    // delete also cascades to any consumers (NatsConsumer.streamId FK is
+    // ON DELETE CASCADE).
+    await pruneOrphanRoleProfiles({
+      prisma,
+      stackId,
+      desiredProfileNames: renderedRoleProfileNames,
+    });
+    await pruneOrphanSigningKeys({
+      prisma,
+      stackId,
+      desiredSignerNames: renderedSignerNames,
+    });
+    orphanStreamCleanup = await pruneOrphanRoleStreams({
+      prisma,
+      stackId,
+      desiredStreamNames: renderedRoleStreamNames,
+    });
 
     await service.applyConfig();
     // `applyConfig()` rotates the server's own bus credentials in Vault KV
@@ -598,11 +422,6 @@ async function runStackNatsApplyPhaseUnlocked(
       }
     }
 
-    const credentialRefByService = new Map(
-      templateVersion.services
-        .filter((s) => s.natsCredentialRef != null)
-        .map((s) => [s.serviceName, s.natsCredentialRef as string]),
-    );
     const roleRefByService = new Map(
       templateVersion.services
         .filter((s) => s.natsRole != null)
@@ -610,17 +429,8 @@ async function runStackNatsApplyPhaseUnlocked(
     );
     const serviceUpdates = stack.services
       .map((svc) => {
-        // Legacy `natsCredentialRef` and new `natsRole` are mutually
-        // exclusive (template-level mixing rule + service-level "either or"
-        // by convention). Prefer role binding when both happen to exist —
-        // a defensive choice; the validator should have already rejected.
         const roleRef = roleRefByService.get(svc.serviceName);
-        const credRef = credentialRefByService.get(svc.serviceName);
-        const concreteId = roleRef
-          ? roleCredentialIdByName.get(roleRef)
-          : credRef
-            ? credentialIdByName.get(credRef)
-            : undefined;
+        const concreteId = roleRef ? roleCredentialIdByName.get(roleRef) : undefined;
         return concreteId ? { id: svc.id, natsCredentialId: concreteId } : null;
       })
       .filter((item): item is { id: string; natsCredentialId: string } => item !== null);
@@ -630,21 +440,17 @@ async function runStackNatsApplyPhaseUnlocked(
         where: { id: stackId },
         data: {
           lastAppliedNatsSnapshot: JSON.stringify({
-            accounts,
-            credentials,
-            streams,
-            consumers,
             resources,
-            // Phase 3: snapshot the resolved prefix and the materialized
-            // role permissions so drift detection can compare cleanly.
+            // The resolved prefix and the materialized role permissions, so
+            // drift detection can compare cleanly.
             subjectPrefix: resolvedSubjectPrefix,
             roles,
-            // Phase 4: snapshot the signers so a future drift detector can
-            // compare the rendered scope envelope against what's live.
+            // Signers, so the drift detector can compare the rendered scope
+            // envelope against what's live.
             signers,
-            // Phase 5: snapshot the resolved (prefixed) exports so consumer
-            // stacks can read them directly without re-resolving the
-            // producer's prefix at consumer-apply time.
+            // The resolved (prefixed) exports, so consumer stacks can read
+            // them directly without re-resolving the producer's prefix at
+            // consumer-apply time.
             resolvedExports,
             imports,
             // Drift-detector inputs — the raw, un-rendered template values
@@ -681,9 +487,7 @@ async function runStackNatsApplyPhaseUnlocked(
     return {
       status: "applied",
       servicesBound: serviceUpdates.length,
-      // Count both legacy and Phase 3 role-derived profiles so a pure-roles
-      // stack reports a non-zero figure in logs/Socket.IO progress.
-      credentialsMapped: credentialIdByName.size + roleCredentialIdByName.size,
+      credentialsMapped: roleCredentialIdByName.size,
     };
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -1113,8 +917,9 @@ async function pruneOrphanSigningKeys(args: {
  * subject filter lives inside the stack's namespace. The row is owned
  * by the consumer stack via `stackId`, so cascade-delete + the
  * `pruneOrphanRoleStreams` diff cover the lifecycle without a separate
- * destroy hook (legacy top-level `nats.streams` keep `stackId = null`
- * because their lifecycle is owned by the system seeder).
+ * destroy hook. System-seeded streams keep `stackId = null` and so stay
+ * out of that diff entirely; JobPool history streams *do* carry a
+ * `stackId` and are excluded by name — see `pruneOrphanRoleStreams`.
  */
 async function materializeRoleStream(args: {
   prisma: PrismaClient;
@@ -1249,9 +1054,16 @@ async function materializeRoleConsumer(args: {
  * the `NatsConsumer.streamId` FK's `onDelete: Cascade` handles consumer
  * cleanup so we don't need a separate consumer prune.
  *
- * Legacy top-level `nats.streams` rows have `stackId = null` and stay out
- * of this filter, so a system template's streams are never accidentally
- * pruned by a co-applied app stack.
+ * **This stack's rows are not all ours.** `NatsStream` has a `stackId` but no
+ * discriminator saying which reconciler manages the row, and the JobPool stream
+ * reconciler also writes stack-owned rows (`JobHistory-*`, see
+ * `job-pool-stream-reconciler.ts`). Selecting on `stackId` alone would classify
+ * every JobPool history stream as an orphan of *this* pass and delete it —
+ * including a `deleteJetStreams` against live NATS, which discards the retained
+ * job history. Both JobPool system templates (`pg-az-backup`, `restore-executor`)
+ * declare `nats.roles`, so that fires on every apply of a backup stack. Hence
+ * the explicit exclusion: we prune only rows this pass is responsible for, and
+ * `pruneOrphanJobPoolStreams` symmetrically prunes only its own.
  */
 async function pruneOrphanRoleStreams(args: {
   prisma: PrismaClient;
@@ -1259,7 +1071,10 @@ async function pruneOrphanRoleStreams(args: {
   desiredStreamNames: Set<string>;
 }): Promise<{ accountId: string; orphanStreamNames: string[] } | null> {
   const existing = await args.prisma.natsStream.findMany({
-    where: { stackId: args.stackId },
+    where: {
+      stackId: args.stackId,
+      NOT: { name: { startsWith: JOB_HISTORY_STREAM_PREFIX } },
+    },
     select: { id: true, name: true, accountId: true },
   });
   const orphans = existing.filter((row) => !args.desiredStreamNames.has(row.name));

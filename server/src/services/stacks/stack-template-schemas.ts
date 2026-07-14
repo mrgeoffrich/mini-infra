@@ -8,6 +8,7 @@ import {
   stackServiceDefinitionSchema,
   stackResourceOutputSchema,
   stackResourceInputSchema,
+  removedField,
 } from "./schemas";
 import { validateKvPath, stripTemplateTokens } from "../vault/vault-kv-paths";
 import { templateRequiresSchema } from "./template-prerequisites/schema";
@@ -70,8 +71,6 @@ const templateVaultSectionSchema = z.object({
   kv: z.array(templateVaultKvSchema).optional(),
 });
 
-const natsSubjectSchema = z.string().min(1).max(255).regex(/^[A-Za-z0-9_$*>\-.]+$/);
-
 // Imported + re-exported from `./nats-subject-shapes` so the structural
 // rules live in a single neutral module that both `schemas.ts` (JobPool
 // trigger subjects) and this file (role-nested authoring surface) can
@@ -90,56 +89,40 @@ const natsSubjectScopeSchema = z
     message: "signer subjectScope must not contain empty tokens ('..' or leading/trailing dots)",
   });
 
-export const templateNatsAccountSchema = z.object({
-  name: z.string().min(1).max(100),
-  displayName: z.string().max(200).optional(),
-  description: z.string().max(500).optional(),
-  scope: z.enum(["host", "environment", "stack"]).default("environment"),
-});
+/**
+ * The removed low-level NATS authoring surface.
+ *
+ * These four sections let a template declare NATS accounts, credential
+ * profiles, streams and consumers directly, using *absolute* subjects against
+ * an explicitly-named account. The role model replaced them: a role declares
+ * subjects *relative* to the stack's `subjectPrefix`, which is what makes
+ * per-stack isolation enforceable rather than a naming convention.
+ *
+ * Every system template migrated to roles, and nothing in the product writes
+ * this shape any more. The keys stay declared (rather than simply deleted) so
+ * a template still carrying them is rejected with a migration path instead of
+ * being silently stripped by Zod — see `removedField`.
+ *
+ * Note this removes only the *template* surface. NATS accounts, streams and
+ * consumers still exist as runtime entities, managed through `/api/nats` and
+ * created by the control plane and system bootstrap.
+ */
+export const REMOVED_NATS_TEMPLATE_FIELDS = {
+  accounts:
+    "nats.accounts[] was removed — roles run on the shared system account and are isolated by subject prefix, so templates no longer declare accounts. Manage accounts via /api/nats.",
+  credentials:
+    "nats.credentials[] was removed — declare nats.roles[] instead. A role's publish/subscribe subjects are written relative to the stack's nats.subjectPrefix and materialize into a credential profile at apply time.",
+  streams:
+    "nats.streams[] was removed — declare streams under the role that owns them, as nats.roles[].streams[], with subjects relative to nats.subjectPrefix.",
+  consumers:
+    "nats.consumers[] was removed — declare consumers under the role that owns them, as nats.roles[].consumers[].",
+} as const;
 
-export const templateNatsCredentialSchema = z.object({
-  name: z.string().min(1).max(100),
-  account: z.string().min(1).max(100),
-  displayName: z.string().max(200).optional(),
-  description: z.string().max(500).optional(),
-  publishAllow: z.array(natsSubjectSchema).min(1),
-  subscribeAllow: z.array(natsSubjectSchema).min(1),
-  ttlSeconds: z.number().int().min(0).optional(),
-  scope: z.enum(["host", "environment", "stack"]).default("environment"),
-});
-
-export const templateNatsStreamSchema = z.object({
-  name: z.string().min(1).max(100),
-  account: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
-  subjects: z.array(natsSubjectSchema).min(1),
-  retention: z.enum(["limits", "interest", "workqueue"]).optional(),
-  storage: z.enum(["file", "memory"]).optional(),
-  maxMsgs: z.number().int().nullable().optional(),
-  maxBytes: z.number().int().nullable().optional(),
-  maxAgeSeconds: z.number().int().nullable().optional(),
-  scope: z.enum(["host", "environment", "stack"]).default("environment"),
-});
-
-export const templateNatsConsumerSchema = z.object({
-  name: z.string().min(1).max(100),
-  stream: z.string().min(1).max(100),
-  durableName: z.string().min(1).max(100).optional(),
-  description: z.string().max(500).optional(),
-  filterSubject: natsSubjectSchema.optional(),
-  deliverPolicy: z.enum(["all", "last", "new", "by_start_sequence", "by_start_time", "last_per_subject"]).optional(),
-  ackPolicy: z.enum(["none", "all", "explicit"]).optional(),
-  maxDeliver: z.number().int().nullable().optional(),
-  ackWaitSeconds: z.number().int().nullable().optional(),
-  scope: z.enum(["host", "environment", "stack"]).default("environment"),
-});
-
-// ----- Phase 1: app-author role / signer / import surface -----
+// ----- App-author role / signer / import surface -----
 
 // Role-nested stream: subjects relative to the stack's subjectPrefix. Drops
 // `account` (always the shared system account) and `scope` (always stack-
-// scoped) compared to the legacy top-level `streams[]` — both are implied
-// by the prefix-only isolation model.
+// scoped) — both are implied by the prefix-only isolation model.
 export const templateNatsRoleStreamSchema = z.object({
   name: z.string().min(1).max(100).regex(nameRegex, "stream name can only contain letters, numbers, '_', '-'"),
   description: z.string().max(500).optional(),
@@ -257,18 +240,17 @@ export const templateNatsSubjectPrefixSchema = z
   });
 
 const templateNatsSectionSchema = z.object({
-  // Phase 1 additions (app-author surface)
   subjectPrefix: templateNatsSubjectPrefixSchema.optional(),
   roles: z.array(templateNatsRoleSchema).optional(),
   signers: z.array(templateNatsSignerSchema).optional(),
   exports: z.array(natsRelativeSubjectSchema).optional(),
   imports: z.array(templateNatsImportSchema).optional(),
 
-  // Existing low-level surface (system templates / advanced)
-  accounts: z.array(templateNatsAccountSchema).optional(),
-  credentials: z.array(templateNatsCredentialSchema).optional(),
-  streams: z.array(templateNatsStreamSchema).optional(),
-  consumers: z.array(templateNatsConsumerSchema).optional(),
+  // Removed — see REMOVED_NATS_TEMPLATE_FIELDS.
+  accounts: removedField(REMOVED_NATS_TEMPLATE_FIELDS.accounts),
+  credentials: removedField(REMOVED_NATS_TEMPLATE_FIELDS.credentials),
+  streams: removedField(REMOVED_NATS_TEMPLATE_FIELDS.streams),
+  consumers: removedField(REMOVED_NATS_TEMPLATE_FIELDS.consumers),
 });
 
 const templateNameSchema = z
@@ -337,46 +319,11 @@ export const createTemplateSchema = z.object({
   // server-side registry — typos rejected at draft-save time.
   requires: templateRequiresSchema.optional(),
 }).superRefine((data, ctx) => {
-  // Mirror draftVersionSchema: vaultAppRoleRef / natsCredentialRef / natsRole /
-  // natsSigner must resolve, the legacy/new mixing rule applies, and role +
-  // signer names must be unique. Without this, a POST /stack-templates that
-  // mixes legacy `nats.credentials` with new `nats.roles` would persist on the
-  // initial v0 draft and only fail later on the first /draft save.
-  const appRoleNames = new Set((data.vault?.appRoles ?? []).map((a) => a.name));
-  const credentialNames = new Set((data.nats?.credentials ?? []).map((c) => c.name));
-  const roleNames = new Set((data.nats?.roles ?? []).map((r) => r.name));
-  const signerNames = new Set((data.nats?.signers ?? []).map((s) => s.name));
-  for (let i = 0; i < data.services.length; i++) {
-    const svc = data.services[i];
-    if (svc.vaultAppRoleRef !== undefined && !appRoleNames.has(svc.vaultAppRoleRef)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' vaultAppRoleRef '${svc.vaultAppRoleRef}' references unknown appRole (defined: ${formatNameSet(appRoleNames)})`,
-        path: ['services', i, 'vaultAppRoleRef'],
-      });
-    }
-    if (svc.natsCredentialRef !== undefined && !credentialNames.has(svc.natsCredentialRef)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' natsCredentialRef '${svc.natsCredentialRef}' references unknown credential (defined: ${formatNameSet(credentialNames)})`,
-        path: ['services', i, 'natsCredentialRef'],
-      });
-    }
-    if (svc.natsRole !== undefined && !roleNames.has(svc.natsRole)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' natsRole '${svc.natsRole}' references unknown role (defined: ${formatNameSet(roleNames)})`,
-        path: ['services', i, 'natsRole'],
-      });
-    }
-    if (svc.natsSigner !== undefined && !signerNames.has(svc.natsSigner)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' natsSigner '${svc.natsSigner}' references unknown signer (defined: ${formatNameSet(signerNames)})`,
-        path: ['services', i, 'natsSigner'],
-      });
-    }
-  }
+  // Mirror draftVersionSchema: vaultAppRoleRef / natsRole / natsSigner must
+  // resolve to something declared in this same body, and role + signer names
+  // must be unique. Without this, a POST /stack-templates carrying a dangling
+  // ref would persist on the initial v0 draft and only fail on a later save.
+  validateTemplateServiceRefs(data, ctx);
   validateNatsSectionShape(data.nats, ctx);
 });
 
@@ -409,96 +356,79 @@ export const draftVersionSchema = z.object({
   // Phase 1 cross-stack prereqs — see createTemplateSchema.
   requires: templateRequiresSchema.optional(),
 }).superRefine((data, ctx) => {
-  // Mirror templateFileSchema: every services[].vaultAppRoleRef must resolve
-  // to a vault.appRoles[].name declared in this same draft body. Otherwise
-  // the field would persist as a dangling reference and the apply-time vault
-  // orchestrator would silently fail to bind the service to any AppRole.
-  const appRoleNames = new Set((data.vault?.appRoles ?? []).map((a) => a.name));
-  for (let i = 0; i < data.services.length; i++) {
-    const svc = data.services[i];
-    if (svc.vaultAppRoleRef !== undefined && !appRoleNames.has(svc.vaultAppRoleRef)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' vaultAppRoleRef '${svc.vaultAppRoleRef}' references unknown appRole (defined: ${formatNameSet(appRoleNames)})`,
-        path: ['services', i, 'vaultAppRoleRef'],
-      });
-    }
-  }
-  const credentialNames = new Set((data.nats?.credentials ?? []).map((c) => c.name));
-  const roleNames = new Set((data.nats?.roles ?? []).map((r) => r.name));
-  const signerNames = new Set((data.nats?.signers ?? []).map((s) => s.name));
-  for (let i = 0; i < data.services.length; i++) {
-    const svc = data.services[i];
-    if (svc.natsCredentialRef !== undefined && !credentialNames.has(svc.natsCredentialRef)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' natsCredentialRef '${svc.natsCredentialRef}' references unknown credential (defined: ${formatNameSet(credentialNames)})`,
-        path: ['services', i, 'natsCredentialRef'],
-      });
-    }
-    if (svc.natsRole !== undefined && !roleNames.has(svc.natsRole)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' natsRole '${svc.natsRole}' references unknown role (defined: ${formatNameSet(roleNames)})`,
-        path: ['services', i, 'natsRole'],
-      });
-    }
-    if (svc.natsSigner !== undefined && !signerNames.has(svc.natsSigner)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Service '${svc.serviceName}' natsSigner '${svc.natsSigner}' references unknown signer (defined: ${formatNameSet(signerNames)})`,
-        path: ['services', i, 'natsSigner'],
-      });
-    }
-  }
+  validateTemplateServiceRefs(data, ctx);
   validateNatsSectionShape(data.nats, ctx);
 });
 
 /**
- * Reusable cross-section validator for the NATS section. Catches the
- * legacy/new mixing rule, name collisions inside roles/signers, and the
- * per-role `imports[].forRoles` resolution. Called from both
- * `draftVersionSchema` and `templateFileSchema` so the rules apply uniformly
- * to HTTP draft submissions and bundled file-loaded templates.
+ * Every symbolic reference a service declares must resolve to something
+ * declared in the same template body. A dangling ref would otherwise persist
+ * and the apply-time orchestrator would silently fail to bind the service to
+ * any AppRole / credential profile.
+ *
+ * Shared by `createTemplateSchema` and `draftVersionSchema` (and mirrored by
+ * `templateFileSchema`) so the create → draft → publish surfaces can't drift
+ * apart on which refs they check.
+ */
+function validateTemplateServiceRefs(
+  data: {
+    services: Array<{
+      serviceName: string;
+      vaultAppRoleRef?: string;
+      natsRole?: string;
+      natsSigner?: string;
+    }>;
+    vault?: { appRoles?: Array<{ name: string }> };
+    nats?: { roles?: Array<{ name: string }>; signers?: Array<{ name: string }> };
+  },
+  ctx: z.RefinementCtx,
+): void {
+  const targets = [
+    {
+      field: 'vaultAppRoleRef' as const,
+      label: 'appRole',
+      names: new Set((data.vault?.appRoles ?? []).map((a) => a.name)),
+    },
+    {
+      field: 'natsRole' as const,
+      label: 'role',
+      names: new Set((data.nats?.roles ?? []).map((r) => r.name)),
+    },
+    {
+      field: 'natsSigner' as const,
+      label: 'signer',
+      names: new Set((data.nats?.signers ?? []).map((s) => s.name)),
+    },
+  ];
+
+  for (let i = 0; i < data.services.length; i++) {
+    const svc = data.services[i];
+    for (const { field, label, names } of targets) {
+      const ref = svc[field];
+      if (ref !== undefined && !names.has(ref)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Service '${svc.serviceName}' ${field} '${ref}' references unknown ${label} (defined: ${formatNameSet(names)})`,
+          path: ['services', i, field],
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Reusable cross-section validator for the NATS section: name collisions
+ * inside roles/signers, and the per-role `imports[].forRoles` resolution.
+ * Called from `createTemplateSchema`, `draftVersionSchema` and
+ * `templateFileSchema` so the rules apply uniformly to HTTP submissions and
+ * bundled file-loaded templates.
  */
 export function validateNatsSectionShape(
-  nats: { accounts?: unknown[]; credentials?: unknown[]; streams?: unknown[]; consumers?: unknown[];
-          roles?: Array<{ name: string; streams?: unknown[]; consumers?: unknown[] }>; signers?: Array<{ name: string }>;
+  nats: { roles?: Array<{ name: string; streams?: unknown[]; consumers?: unknown[] }>; signers?: Array<{ name: string }>;
           imports?: Array<{ forRoles?: string[] }>; exports?: unknown[]; subjectPrefix?: unknown } | undefined,
   ctx: z.RefinementCtx,
 ): void {
   if (!nats) return;
-  const hasLegacy = (nats.credentials?.length ?? 0) > 0;
-  const hasNewRoles = (nats.roles?.length ?? 0) > 0;
-  // Mixing rule: a single template must not mix the legacy `credentials`
-  // surface with the new `roles` surface. System templates use legacy;
-  // app templates use roles. Forces an explicit migration step.
-  if (hasLegacy && hasNewRoles) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "nats.credentials (legacy) and nats.roles (new) cannot be declared in the same template — pick one surface",
-      path: ["nats", "roles"],
-    });
-  }
-
-  // Same rule for streams/consumers: an app template with `roles[]` must
-  // declare its JetStream resources via `roles[].streams` (auto-prefixed,
-  // relative subjects). Top-level `nats.streams` keeps absolute subjects
-  // for system templates and must not coexist with the new role surface.
-  if (hasNewRoles && (nats.streams?.length ?? 0) > 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "nats.streams (legacy, absolute subjects) cannot be declared alongside nats.roles — declare streams via nats.roles[].streams instead",
-      path: ["nats", "streams"],
-    });
-  }
-  if (hasNewRoles && (nats.consumers?.length ?? 0) > 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "nats.consumers (legacy) cannot be declared alongside nats.roles — declare consumers via nats.roles[].consumers instead",
-      path: ["nats", "consumers"],
-    });
-  }
 
   // Unique role names
   const seenRoleNames = new Set<string>();

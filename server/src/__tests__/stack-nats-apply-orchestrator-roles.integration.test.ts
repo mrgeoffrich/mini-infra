@@ -1,9 +1,8 @@
 /**
- * Integration tests for Phase 3 — role materialization in
- * `runStackNatsApplyPhase`. The control-plane service is mocked because we
- * don't want to talk to a real NATS server in unit/integration suite, but
- * everything else (Prisma writes, allowlist read, prefix resolution,
- * template engine) is real.
+ * Integration tests for role materialization in `runStackNatsApplyPhase`. The
+ * control-plane service is mocked because we don't want to talk to a real NATS
+ * server in the unit/integration suite, but everything else (Prisma writes,
+ * allowlist read, prefix resolution, template engine) is real.
  *
  * What's covered:
  *   - Default prefix `app.<stack.id>` materializes roles with prefixed perms
@@ -13,14 +12,24 @@
  *   - Non-default prefix without an allowlist entry → apply fails
  *   - Non-default prefix WITH an allowlist entry → apply succeeds
  *   - Two stacks with overlapping role names get distinct profiles + prefixes
- *   - Legacy `nats.credentials` path still works unchanged
+ *   - Role-nested JetStream streams/consumers, and the orphan prune — including
+ *     that it leaves the JobPool reconciler's `JobHistory-*` streams alone
  *   - Defense-in-depth: a corrupted (escape-pattern) role permission stored
  *     in the DB is rejected at apply
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createId } from '@paralleldrive/cuid2';
+import { jobHistoryStreamName } from '@mini-infra/types';
 import { testPrisma } from './integration-test-helpers';
+
+// Hoisted so the mock factory below and the assertions can share one spy.
+// `deleteJetStreams` is the destructive edge of the apply phase — it deletes
+// live JetStream streams — so a test needs to be able to assert what it was
+// (and wasn't) asked to remove.
+const { deleteJetStreamsMock } = vi.hoisted(() => ({
+  deleteJetStreamsMock: vi.fn(async () => undefined),
+}));
 
 // Mock the NATS control plane: tests don't need a live server. We only care
 // about what gets written to Prisma.
@@ -47,6 +56,7 @@ vi.mock('../services/nats/nats-control-plane-service', async (orig) => {
       },
       applyConfig: async () => undefined,
       applyJetStreamResources: async () => undefined,
+      deleteJetStreams: deleteJetStreamsMock,
     }),
   };
 });
@@ -58,10 +68,7 @@ import { runStackNatsApplyPhase } from '../services/stacks/stack-nats-apply-orch
 interface SeedStackInput {
   natsRoles?: unknown;
   natsSubjectPrefix?: string | null;
-  natsCredentials?: unknown;
-  natsAccounts?: unknown;
   serviceNatsRole?: string | null;
-  serviceNatsCredentialRef?: string | null;
   templateName?: string;
   stackName?: string;
 }
@@ -92,8 +99,6 @@ async function seedStack(input: SeedStackInput): Promise<{ stackId: string; temp
       networkTypeDefaults: {},
       networks: [],
       volumes: [],
-      natsAccounts: input.natsAccounts ?? null,
-      natsCredentials: input.natsCredentials ?? null,
       natsRoles: input.natsRoles ?? null,
       natsSubjectPrefix: input.natsSubjectPrefix ?? null,
     },
@@ -109,7 +114,6 @@ async function seedStack(input: SeedStackInput): Promise<{ stackId: string; temp
       dependsOn: [],
       order: 0,
       natsRole: input.serviceNatsRole ?? null,
-      natsCredentialRef: input.serviceNatsCredentialRef ?? null,
     },
   });
   await testPrisma.stack.create({
@@ -399,38 +403,9 @@ describe('runStackNatsApplyPhase — Phase 3 escape-pattern defense in depth', (
   });
 });
 
-describe('runStackNatsApplyPhase — Phase 3 legacy passthrough', () => {
+describe('runStackNatsApplyPhase — reviewer-flagged gaps', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('templates using only legacy `nats.credentials` still bind correctly', async () => {
-    const accountName = `legacy-acct-${Date.now()}`;
-    const credName = `legacy-cred-${Date.now()}`;
-    const { stackId, serviceId } = await seedStack({
-      natsAccounts: [{ name: accountName, scope: 'host' }],
-      natsCredentials: [
-        {
-          name: credName,
-          account: accountName,
-          publishAllow: ['legacy.>'],
-          subscribeAllow: ['legacy.>'],
-          scope: 'host',
-        },
-      ],
-      serviceNatsCredentialRef: credName,
-    });
-
-    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: 'test-user' });
-    expect(result.status).toBe('applied');
-    expect(result.servicesBound).toBe(1);
-
-    const svc = await testPrisma.stackService.findUnique({ where: { id: serviceId } });
-    expect(svc!.natsCredentialId).not.toBeNull();
-    const profile = await testPrisma.natsCredentialProfile.findUnique({
-      where: { id: svc!.natsCredentialId! },
-    });
-    expect(profile!.publishAllow).toEqual(['legacy.>']);
   });
 
   it('an empty NATS section returns "skipped"', async () => {
@@ -438,51 +413,8 @@ describe('runStackNatsApplyPhase — Phase 3 legacy passthrough', () => {
     const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
     expect(result.status).toBe('skipped');
   });
-});
 
-describe('runStackNatsApplyPhase — Phase 3 reviewer-flagged gaps', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('a service with both natsRole and natsCredentialRef set prefers the role binding', async () => {
-    // The Phase 1 validator rejects mixed templates, but the orchestrator
-    // also has a defense-in-depth preference: role wins over credentialRef
-    // if both are somehow set. This test pins that behavior.
-    const accountName = `dual-acct-${Date.now()}`;
-    const credName = `dual-cred-${Date.now()}`;
-    const { stackId, serviceId } = await seedStack({
-      // Both surfaces declared (corrupt-template scenario)
-      natsAccounts: [{ name: accountName, scope: 'host' }],
-      natsCredentials: [
-        {
-          name: credName,
-          account: accountName,
-          publishAllow: ['legacy.>'],
-          subscribeAllow: ['legacy.>'],
-          scope: 'host',
-        },
-      ],
-      natsRoles: [{ name: 'gateway', publish: ['agent.in'] }],
-      serviceNatsRole: 'gateway',
-      serviceNatsCredentialRef: credName,
-    });
-
-    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
-    expect(result.status).toBe('applied');
-
-    const svc = await testPrisma.stackService.findUnique({ where: { id: serviceId } });
-    const profile = await testPrisma.natsCredentialProfile.findUnique({
-      where: { id: svc!.natsCredentialId! },
-    });
-    // Role-derived profile wins. Permissions are prefix-prepended, not the
-    // bare 'legacy.>' from the legacy credential.
-    const pub = profile!.publishAllow as unknown as string[];
-    expect(pub.some((s) => s.endsWith('.agent.in'))).toBe(true);
-    expect(pub.some((s) => s === 'legacy.>')).toBe(false);
-  });
-
-  it('credentialsMapped counts both legacy creds and role-materialized profiles', async () => {
+  it('credentialsMapped counts the role-materialized profiles', async () => {
     const { stackId } = await seedStack({
       natsRoles: [
         { name: 'a', publish: ['x'] },
@@ -659,6 +591,49 @@ describe('runStackNatsApplyPhase — role-nested JetStream streams + consumers',
     const subjB = streamB!.subjects as unknown as string[];
     expect(subjA[0]).toBe(`app.${a.stackId}.x.>`);
     expect(subjB[0]).toBe(`app.${b.stackId}.x.>`);
+  });
+
+  it('leaves JobPool history streams alone when pruning orphan role-streams', async () => {
+    // Regression: `pruneOrphanRoleStreams` selects NatsStream rows by stackId.
+    // JobPool history streams (`JobHistory-*`, written by
+    // job-pool-stream-reconciler.ts) also carry a stackId, and they are never
+    // in the role-derived desired set — so an unfiltered prune classified every
+    // one of them as an orphan of this pass, deleted the row, and asked NATS to
+    // delete the live stream, discarding the retained job history. Both JobPool
+    // system templates (pg-az-backup, restore-executor) declare nats.roles, so
+    // this fired on every apply of a backup stack.
+    const { stackId } = await seedStack({
+      natsRoles: [{ name: 'worker', publish: ['x'], streams: [{ name: 'jobs', subjects: ['x.>'] }] }],
+    });
+    // First apply materializes the role-derived stream.
+    await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+
+    // Stand in for the JobPool reconciler: a stack-owned history stream that
+    // this orchestrator does not manage and must not touch.
+    const account = await testPrisma.natsStream.findFirst({ where: { stackId } });
+    const historyName = jobHistoryStreamName(stackId, 'backup');
+    await testPrisma.natsStream.create({
+      data: {
+        name: historyName,
+        accountId: account!.accountId,
+        stackId,
+        subjects: [`mini-infra.job-pool.${stackId}.backup.>`],
+        retention: 'limits',
+        storage: 'file',
+      },
+    });
+
+    // Re-apply. The role-derived stream is still desired; the history stream is
+    // not in the desired set but is not ours to prune.
+    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('applied');
+
+    const survivor = await testPrisma.natsStream.findUnique({ where: { name: historyName } });
+    expect(survivor).not.toBeNull();
+    expect(deleteJetStreamsMock).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining([historyName]),
+    );
   });
 
   it('defense-in-depth: stream subject with `>` at root is rejected at apply', async () => {

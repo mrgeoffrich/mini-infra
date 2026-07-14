@@ -92,6 +92,17 @@ When an application runs in several environments, its card shows a count and how
 
 The environments offered are those matching the application's network type. An environment that already has this application is shown but not selectable — deploy once per environment.
 
+### Promoting a version between environments
+
+Once staging is running a version you're happy with, **Promote** on that row deploys *that exact version* into another environment. It is the same primitive as an upgrade — the target moves to the version the source already has — so there is no separate "promotion" state to reason about.
+
+Before it does anything it shows you the diff: what actually changes in the target environment, service by service. Two cases it will not let you get wrong:
+
+- **The target is already on that version.** Nothing to do, and it says so rather than failing.
+- **The target is on a *newer* version** — a hotfix that went straight to production, or a template that was rolled back. Promoting the older version onto it is still allowed and is sometimes exactly what you want, but it is a **rollback**, not a promotion, and it is labelled as one.
+
+Promoting changes the target's definition and leaves it **pending**; the deploy runs as a normal apply, and you can watch it in the task tracker.
+
 ## Saving configuration changes
 
 Open an application and go to **Configuration**. The two buttons do different things, and the difference is the whole point:

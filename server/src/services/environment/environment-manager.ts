@@ -948,6 +948,10 @@ export class EnvironmentManager {
           status: 'undeployed',
           templateId: egressTemplate.id,
           templateVersion: version.version,
+          // See stack-template-service's instantiate: the FK goes wherever the
+          // version number goes, or the stack reads as "no version installed" to
+          // anything that needs the exact version rather than its number.
+          templateVersionId: version.id,
           builtinVersion: version.version,
           parameters: version.parameters as Prisma.InputJsonValue,
           parameterValues: version.defaultParameterValues as Prisma.InputJsonValue,

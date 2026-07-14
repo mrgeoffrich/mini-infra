@@ -164,11 +164,20 @@ async function upgradeStackFromTemplate(
 
   // Backfill templateId if not set (migration from pre-template stacks)
   if (!existing.templateId) {
+    // Resolve the FK too, not just the version number. A stack carrying a
+    // version number with a null `templateVersionId` reads as "no version
+    // installed" to anything that needs the exact version rather than its
+    // number — a targeted upgrade, or promotion between environments.
+    const versionRow = await prisma.stackTemplateVersion.findFirst({
+      where: { templateId, version: existing.builtinVersion },
+      select: { id: true },
+    });
     await prisma.stack.update({
       where: { id: existing.id },
       data: {
         templateId,
         templateVersion: existing.builtinVersion,
+        templateVersionId: versionRow?.id ?? null,
       },
     });
     log.info(

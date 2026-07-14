@@ -33,6 +33,33 @@ System templates — HAProxy, monitoring, Vault, NATS, Postgres, Cloudflare Tunn
 
 Click **Create Template**, give it a name and basic metadata, then define its services and configuration in the editor.
 
+## Importing a Docker Compose file
+
+If you already have a `compose.yml`, click **Import from Compose** on the Stack Templates page and paste it (or choose the file). Mini Infra maps it to a template draft and shows you exactly what it did before anything is created.
+
+Compose is a bigger surface than a stack template, so an import usually leaves something behind. **Nothing is dropped silently** — every difference is listed, grouped by how much you need to care:
+
+- **Blocking** — a service that cannot be imported at all, most often one with only a `build:` (Mini Infra deploys pre-built images; build and push it, then set `image:`). You cannot create the template until these are resolved, because the result would be missing part of what your file describes.
+- **Not imported** — recognised, but with no equivalent here: `env_file`, `secrets`, `configs`, `deploy` (replicas, resource limits), `privileged`, `container_name`. Each one tells you what to use instead.
+- **Changed** — imported, but not exactly as written. A port bound to a specific host IP (`127.0.0.1:8001:8001`) is published on **all** interfaces, so it ends up more reachable than Compose would have made it. A bind mount points at a path on the Docker host, which has to exist there.
+- **Assumed** — Compose left it unsaid and Mini Infra picked something: an untagged image becomes `:latest`, a volume used but never declared gets declared for you.
+
+What comes across:
+
+| Compose | Becomes |
+| --- | --- |
+| `image: ghcr.io/acme/api:v1.4.2` | image and tag, stored separately |
+| `ports: ["8080:80"]` | a structured port mapping |
+| `environment`, `labels` | either the map or the `KEY=value` list form |
+| `volumes: ["data:/var/lib"]` | a named volume plus its mount |
+| `healthcheck: {interval: 30s}` | the same check, with durations converted |
+| `depends_on` | start order |
+| `restart`, `command`, `entrypoint`, `user`, `cap_add`, `devices`, `logging` | the equivalent container settings |
+
+Every service imports as **Stateful**. A StatelessWeb service needs routing, which a compose file has no way to express — switch a service over and add routing once the template exists.
+
+An imported template lands as a **draft**, so nothing is deployed until you review it and publish.
+
 ## The template editor
 
 The editor has a main editing area and a **version sidebar**.
