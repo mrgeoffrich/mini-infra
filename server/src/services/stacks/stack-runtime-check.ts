@@ -23,17 +23,18 @@
  * plan, which the user reaches by opening the plan view. Prefer false negatives
  * here; the plan remains the authority.
  */
-import type { DockerContainerInfo } from "@mini-infra/types";
+import type { DockerContainerInfo, StackRuntimeIssue } from "@mini-infra/types";
 
 /** Labels the reconciler stamps on every managed container. */
 export const STACK_ID_LABEL = "mini-infra.stack-id";
 export const SERVICE_LABEL = "mini-infra.service";
 export const DEFINITION_HASH_LABEL = "mini-infra.definition-hash";
 
-export type RuntimeIssue =
-  | { kind: "missing"; serviceName: string }
-  | { kind: "not-running"; serviceName: string; status: string }
-  | { kind: "hash-mismatch"; serviceName: string };
+/**
+ * Shared with the client via `@mini-infra/types` — the needs-attention rollup
+ * turns these into operator-facing reasons on both sides.
+ */
+export type RuntimeIssue = StackRuntimeIssue;
 
 export interface StackRuntimeCheck {
   /** True when every checked service is running with the hash we applied. */
