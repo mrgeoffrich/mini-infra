@@ -30,6 +30,12 @@
           "file": "client/src/app/applications/[id]/_components/environments-panel.tsx"
         },
         {
+          "id": "application-promote-action",
+          "label": "Application Promote Action",
+          "elementType": "Button",
+          "file": "client/src/app/applications/[id]/_components/environments-panel.tsx"
+        },
+        {
           "id": "stack-history-restore-button",
           "label": "Stack History Restore Button",
           "elementType": "Button",
@@ -798,6 +804,12 @@
       "label": "Stack Deployment Phase",
       "elementType": "div",
       "file": "client/src/components/stacks/DeploymentPhaseTrail.tsx"
+    },
+    {
+      "id": "promote-target-environment",
+      "label": "Promote Target Environment",
+      "elementType": "SelectTrigger",
+      "file": "client/src/components/stacks/PromoteToEnvironmentDialog.tsx"
     },
     {
       "id": "rotate-inputs-dialog",

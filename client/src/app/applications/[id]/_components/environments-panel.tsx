@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { IconExternalLink, IconPlus } from "@tabler/icons-react";
+import { IconArrowBigUpLine, IconExternalLink, IconPlus } from "@tabler/icons-react";
 import {
   Card,
   CardContent,
@@ -25,6 +25,7 @@ import {
   UpdateAvailableBadge,
 } from "@/components/stacks/stack-indicators";
 import { DeployToEnvironmentDialog } from "@/app/applications/_components/deploy-to-environment-dialog";
+import { PromoteToEnvironmentDialog } from "@/components/stacks/PromoteToEnvironmentDialog";
 import { useEnvironments } from "@/hooks/use-environments";
 import type { StackInfo, StackTemplateInfo } from "@mini-infra/types";
 
@@ -50,6 +51,8 @@ export function EnvironmentsPanel({
 }) {
   const { data: envData } = useEnvironments();
   const [deployOpen, setDeployOpen] = useState(false);
+  // The row the operator chose to promote *from*; null when the dialog is shut.
+  const [promoteFrom, setPromoteFrom] = useState<StackInfo | null>(null);
 
   const envNameById = new Map(
     (envData?.environments ?? []).map((e) => [e.id, e.name] as const),
@@ -123,12 +126,29 @@ export function EnvironmentsPanel({
                     )}
                   </TableCell>
                   <TableCell>
-                    <Button asChild variant="ghost" size="sm">
-                      <Link to={`/stacks/${stack.id}`}>
-                        Manage
-                        <IconExternalLink className="ml-1 h-3.5 w-3.5" />
-                      </Link>
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      {/* Promotion reads naturally from the source row: you are
+                          looking at staging, and you push what it has elsewhere.
+                          Only offered when there is somewhere to push it to and
+                          something to push. */}
+                      {stacks.length > 1 && stack.templateVersionId != null && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setPromoteFrom(stack)}
+                          data-tour="application-promote-action"
+                        >
+                          <IconArrowBigUpLine className="mr-1 h-3.5 w-3.5" />
+                          Promote
+                        </Button>
+                      )}
+                      <Button asChild variant="ghost" size="sm">
+                        <Link to={`/stacks/${stack.id}`}>
+                          Manage
+                          <IconExternalLink className="ml-1 h-3.5 w-3.5" />
+                        </Link>
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -143,6 +163,21 @@ export function EnvironmentsPanel({
         open={deployOpen}
         onOpenChange={setDeployOpen}
       />
+
+      {promoteFrom && (
+        <PromoteToEnvironmentDialog
+          // Keyed by source stack so switching rows resets the dialog's picker
+          // and diff rather than showing the previous row's target.
+          key={promoteFrom.id}
+          sourceStack={promoteFrom}
+          stacks={stacks}
+          environmentNameById={envNameById}
+          open
+          onOpenChange={(next) => {
+            if (!next) setPromoteFrom(null);
+          }}
+        />
+      )}
     </Card>
   );
 }

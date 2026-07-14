@@ -59,6 +59,7 @@ type SerializableStack = {
   resourceInputs?: unknown;
   templateId?: string | null;
   templateVersion?: number | null;
+  templateVersionId?: string | null;
   template?: { source?: string; currentVersion?: { version: number } | null } | null;
   tlsCertificates?: unknown;
   dnsRecords?: unknown;
@@ -142,6 +143,12 @@ export function serializeStack(
     resourceInputs: stack.resourceInputs ?? [],
     templateId: stack.templateId ?? null,
     templateVersion: stack.templateVersion ?? null,
+    // The FK, not just the version number — a targeted upgrade needs the id, and
+    // promotion between environments is "install the version this other
+    // environment already has". Set explicitly: it was previously reaching the
+    // client only by accident, riding the `...rest` spread on queries that
+    // happened to use `include` rather than a narrowing `select`.
+    templateVersionId: stack.templateVersionId ?? null,
     templateSource: (stack.template?.source as 'system' | 'user' | undefined) ?? null,
     templateCurrentVersion: stack.template?.currentVersion?.version ?? null,
     templateUpdateAvailable,
