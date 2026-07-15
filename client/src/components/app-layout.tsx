@@ -1,6 +1,8 @@
+import { Suspense } from "react";
 import { Outlet } from "react-router-dom";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { AuthSpinner } from "@/components/auth-spinner";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AgentChatProvider } from "@/components/agent/agent-chat-provider";
 import { AgentChatFAB } from "@/components/agent/agent-chat-fab";
@@ -31,7 +33,17 @@ export function AppLayout() {
           <SiteHeader />
           <div className="flex flex-1 flex-col">
             <div className="@container/main flex flex-1 flex-col gap-2">
-              <Outlet />
+              {/* One boundary for every lazily-loaded page behind the layout
+                  (route-level code splitting, P6 5.4). */}
+              <Suspense
+                fallback={
+                  <div className="flex flex-1 items-center justify-center py-16">
+                    <AuthSpinner showCard={false} />
+                  </div>
+                }
+              >
+                <Outlet />
+              </Suspense>
             </div>
           </div>
         </SidebarInset>

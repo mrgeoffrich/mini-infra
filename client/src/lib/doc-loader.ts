@@ -1,38 +1,16 @@
 import docsStructure from "../user-docs/docs-structure.yaml";
 import docsQuestions from "../user-docs/docs-questions.yaml";
+import docsMeta from "../user-docs/docs-meta.generated.json";
 
-/** Minimal front-matter parser — replaces the `front-matter` npm package. */
-function parseFrontMatter<T>(raw: string): { attributes: T; body: string } {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!match) return { attributes: {} as T, body: raw };
-
-  const attrs: Record<string, unknown> = {};
-  const lines = match[1].split("\n");
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    const idx = line.indexOf(":");
-    if (idx === -1) { i++; continue; }
-    const key = line.slice(0, idx).trim();
-    const rest = line.slice(idx + 1).trim();
-
-    if (rest === "") {
-      // Could be a YAML block list — collect "  - value" lines
-      const items: string[] = [];
-      while (i + 1 < lines.length && lines[i + 1].match(/^\s+-\s/)) {
-        i++;
-        items.push(lines[i].replace(/^\s+-\s+/, ""));
-      }
-      attrs[key] = items.length > 0 ? items : "";
-    } else if (rest.startsWith("[") && rest.endsWith("]")) {
-      attrs[key] = rest.slice(1, -1).split(",").map((s) => s.trim());
-    } else {
-      attrs[key] = rest;
-    }
-    i++;
-  }
-  return { attributes: attrs as T, body: match[2] };
-}
+/**
+ * Doc *metadata* (title/description/tags per article) is loaded eagerly from a
+ * small generated manifest — see `scripts/generate-docs-meta.mjs`. Doc *bodies*
+ * are loaded lazily (below), so the ~436 KB of markdown no longer ships in the
+ * initial bundle for the always-mounted help sidebar. Only the help article
+ * page (a lazy route) and the search index (lazily, on first use) ever pull a
+ * body across the wire. Re-run `pnpm generate:docs-meta` after adding, renaming,
+ * or re-titling an article.
+ */
 
 export interface DocFrontmatter {
   title: string;
@@ -40,11 +18,14 @@ export interface DocFrontmatter {
   tags?: string[];
 }
 
+/**
+ * Article metadata. The markdown body is NOT here — it's loaded lazily on demand
+ * (see `loadDocContent`) so the ~436 KB of bodies stay out of the initial bundle.
+ */
 export interface DocEntry {
   slug: string;
   category: string;
   frontmatter: DocFrontmatter;
-  content: string;
   href: string;
   /** Topics this article covers — from docs-structure.yaml */
   topics: string[];
@@ -73,6 +54,7 @@ export interface QuestionMapping {
 
 const structure = docsStructure as DocsStructure;
 const questions = docsQuestions as QuestionMapping[];
+const metaMap = docsMeta as Record<string, DocFrontmatter>;
 
 /** Build a lookup from "category/slug" → topics[] */
 function buildTopicsMap(): Map<string, string[]> {
@@ -87,59 +69,68 @@ function buildTopicsMap(): Map<string, string[]> {
 
 const topicsMap = buildTopicsMap();
 
-const rawFiles = import.meta.glob("../user-docs/**/*.md", {
-  eager: true,
+/**
+ * Lazy body loaders, keyed by "category/slug". `eager: false` (the default) is
+ * the whole point — Vite emits a dynamic import per file instead of inlining
+ * every body into this module's chunk.
+ */
+const bodyLoaders = import.meta.glob("../user-docs/**/*.md", {
   query: "?raw",
   import: "default",
-}) as Record<string, string>;
+}) as Record<string, () => Promise<string>>;
 
-/** Map from "category/slug" to parsed doc entry */
-function buildRawMap(): Map<string, DocEntry> {
-  const map = new Map<string, DocEntry>();
-  for (const [filePath, raw] of Object.entries(rawFiles)) {
-    const parts = filePath
-      .replace("../user-docs/", "")
-      .replace(/\.md$/, "")
-      .split("/");
-    const category = parts[0];
-    const slug = parts[parts.length - 1];
-    const key = `${category}/${slug}`;
+function keyForPath(filePath: string): string {
+  const parts = filePath
+    .replace("../user-docs/", "")
+    .replace(/\.md$/, "")
+    .split("/");
+  const category = parts[0];
+  const slug = parts[parts.length - 1];
+  return `${category}/${slug}`;
+}
 
-    const { attributes, body } = parseFrontMatter<DocFrontmatter>(raw);
+const loaderByKey = new Map<string, () => Promise<string>>();
+for (const [filePath, loader] of Object.entries(bodyLoaders)) {
+  loaderByKey.set(keyForPath(filePath), loader);
+}
 
-    map.set(key, {
+/** Minimal front-matter stripper — the manifest already holds the parsed attributes. */
+function stripFrontMatter(raw: string): string {
+  const match = raw.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?([\s\S]*)$/);
+  return (match ? match[1] : raw).trim();
+}
+
+function metaFor(key: string, slug: string): DocFrontmatter {
+  return metaMap[key] ?? { title: slug, description: "" };
+}
+
+/** Build the metadata-only registry (body-free) from the manifest + structure. */
+function buildRegistry(): DocEntry[] {
+  const entries: DocEntry[] = [];
+  const seen = new Set<string>();
+
+  const add = (key: string) => {
+    if (seen.has(key)) return;
+    const [category, slug] = key.split("/");
+    entries.push({
       slug,
       category,
-      frontmatter: attributes,
-      content: body.trim(),
+      frontmatter: metaFor(key, slug),
       href: `/help/${category}/${slug}`,
       topics: topicsMap.get(key) ?? [],
     });
-  }
-  return map;
-}
+    seen.add(key);
+  };
 
-const rawMap = buildRawMap();
-
-function buildRegistry(): DocEntry[] {
-  const entries: DocEntry[] = [];
-
+  // YAML-defined order first…
   for (const section of structure.sections) {
     for (const article of section.articles) {
       const key = `${section.slug}/${article.slug}`;
-      const doc = rawMap.get(key);
-      if (doc) {
-        entries.push(doc);
-      }
+      if (metaMap[key]) add(key);
     }
   }
-
-  // Include any docs that exist on disk but aren't in the YAML yet (append at end)
-  for (const [, doc] of rawMap) {
-    if (!entries.includes(doc)) {
-      entries.push(doc);
-    }
-  }
+  // …then any article present on disk (in the manifest) but not yet in the YAML.
+  for (const key of Object.keys(metaMap)) add(key);
 
   return entries;
 }
@@ -150,9 +141,17 @@ export function getDocBySlug(
   category: string,
   slug: string
 ): DocEntry | undefined {
-  return docRegistry.find(
-    (d) => d.category === category && d.slug === slug
-  );
+  return docRegistry.find((d) => d.category === category && d.slug === slug);
+}
+
+/** Load one article's markdown body (front-matter stripped). Returns null if unknown. */
+export async function loadDocContent(
+  category: string,
+  slug: string
+): Promise<string | null> {
+  const loader = loaderByKey.get(`${category}/${slug}`);
+  if (!loader) return null;
+  return stripFrontMatter(await loader());
 }
 
 export interface DocCategory {
@@ -169,7 +168,7 @@ export function getDocsByCategory(): DocCategory[] {
   // Build categories in YAML-defined order
   for (const section of structure.sections) {
     const docs = section.articles
-      .map((article) => rawMap.get(`${section.slug}/${article.slug}`))
+      .map((article) => getDocBySlug(section.slug, article.slug))
       .filter((d): d is DocEntry => d !== undefined);
 
     if (docs.length > 0) {

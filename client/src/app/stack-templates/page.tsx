@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconTemplate, IconPlus, IconFileImport } from "@tabler/icons-react";
+import { IconTemplate, IconPlus, IconFileImport, IconDownload } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,12 +15,14 @@ import { Label } from "@/components/ui/label";
 import { TemplateTable } from "@/components/stack-templates/template-table";
 import { CreateTemplateDialog } from "@/components/stack-templates/create-template-dialog";
 import { ImportComposeDialog } from "@/components/stack-templates/import-compose-dialog";
+import { ImportTemplateDialog } from "@/components/stack-templates/import-template-dialog";
 import { useStackTemplates } from "@/hooks/use-stack-templates";
 import type { StackTemplateSource, StackTemplateScope } from "@mini-infra/types";
 
 export default function StackTemplatesPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importTemplateDialogOpen, setImportTemplateDialogOpen] = useState(false);
   const [source, setSource] = useState<StackTemplateSource | undefined>(undefined);
   const [scope, setScope] = useState<StackTemplateScope | undefined>(undefined);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -58,6 +60,14 @@ export default function StackTemplatesPage() {
             >
               <IconFileImport className="h-4 w-4 mr-2" />
               Import from Compose
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setImportTemplateDialogOpen(true)}
+              data-tour="import-template-button"
+            >
+              <IconDownload className="h-4 w-4 mr-2" />
+              Import template
             </Button>
             <Button onClick={() => setCreateDialogOpen(true)}>
               <IconPlus className="h-4 w-4 mr-2" />
@@ -154,6 +164,11 @@ export default function StackTemplatesPage() {
       </div>
 
       <ImportComposeDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+
+      <ImportTemplateDialog
+        open={importTemplateDialogOpen}
+        onOpenChange={setImportTemplateDialogOpen}
+      />
 
       <CreateTemplateDialog
         open={createDialogOpen}

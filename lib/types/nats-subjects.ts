@@ -33,6 +33,15 @@
  */
 export const NATS_SYSTEM_PREFIX = "mini-infra" as const;
 
+/**
+ * Default per-stack NATS subject prefix *template* (rendered with `{{stack.id}}`
+ * substituted at apply time → `app.<stack-id>`). A template that declares any
+ * other prefix must be on the admin subject-prefix allowlist. This is the single
+ * source of truth for "what counts as the default"; the apply orchestrator and
+ * the template export/import codec both compare against it.
+ */
+export const DEFAULT_NATS_SUBJECT_PREFIX_TEMPLATE = "app.{{stack.id}}" as const;
+
 /** Phase 1: smoke-ping subjects used by the bus health-check loopback. */
 export const SystemSubject = {
   /**

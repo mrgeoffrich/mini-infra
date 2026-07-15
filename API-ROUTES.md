@@ -414,7 +414,9 @@ Public, setup-scoped "Load from Backup" onboarding flow. Every route 403s once a
 | GET | `/api/stack-templates/:templateId` | Get template |
 | GET | `/api/stack-templates/:templateId/versions` | List versions |
 | GET | `/api/stack-templates/:templateId/versions/:versionId` | Get version |
+| GET | `/api/stack-templates/:templateId/versions/:versionId/export` | Export a version as a portable YAML document (secrets redacted) |
 | POST | `/api/stack-templates/` | Create template |
+| POST | `/api/stack-templates/import` | Create a user template from an exported YAML document |
 | PATCH | `/api/stack-templates/:templateId` | Update template metadata |
 | POST | `/api/stack-templates/:templateId/draft` | Save draft version |
 | POST | `/api/stack-templates/:templateId/publish` | Publish draft as new version |

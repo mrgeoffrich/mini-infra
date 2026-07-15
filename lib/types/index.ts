@@ -86,6 +86,9 @@ export * from "./addons";
 // Stack Template types
 export * from "./stack-templates";
 
+// Pure version<->draft mappers (shared by client codec + server export)
+export * from "./template-draft";
+
 // Stack Template prerequisites (Phase 1 — cross-stack `requires` block)
 export * from "./template-prerequisites";
 
@@ -116,8 +119,14 @@ export * from "./tailscale";
 // Pool-instance addon label keys
 export * from "./pool-addons";
 
+// Shared "nothing dropped in silence" import-issue model
+export * from "./import-issues";
+
 // Docker Compose → stack template mapping (pure; the YAML parser lives with the caller)
 export * from "./compose-import";
+
+// Stack template export/import codec (pure; the YAML parser lives with the caller)
+export * from "./template-transfer";
 
 // API route registry (ApiBase/ApiRoute/ALL_API_ROUTES)
 export * from "./api-routes";

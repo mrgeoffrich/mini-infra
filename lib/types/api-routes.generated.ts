@@ -321,6 +321,8 @@ export const ALL_API_ROUTES: readonly ApiRouteEntry[] = [
   { method: "GET", path: "/api/stack-templates/:templateId/versions" },
   { method: "GET", path: "/api/stack-templates/:templateId/versions/:versionId" },
   { method: "POST", path: "/api/stack-templates/:templateId/versions/:versionId/archive" },
+  { method: "GET", path: "/api/stack-templates/:templateId/versions/:versionId/export" },
+  { method: "POST", path: "/api/stack-templates/import" },
   { method: "GET", path: "/api/stack-templates/predicates" },
   { method: "GET", path: "/api/stacks" },
   { method: "POST", path: "/api/stacks" },
