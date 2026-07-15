@@ -24,24 +24,15 @@ import type {
   StackServiceDefinition,
   StackVolume,
 } from './stacks';
+import type { ImportIssue, ImportIssueLevel } from './import-issues';
 
-/** How much a user needs to care about a given issue. */
-export type ComposeIssueLevel =
-  /** The file can't be imported at all. */
-  | 'error'
-  /** Recognised, but has no equivalent here — it was NOT carried across. */
-  | 'unsupported'
-  /** Carried across, but not exactly as written. */
-  | 'lossy'
-  /** Compose left it unsaid; we had to pick something. */
-  | 'defaulted';
-
-export interface ComposeImportIssue {
-  level: ComposeIssueLevel;
-  /** Where in the compose file, e.g. `services.web.build`. */
-  path: string;
-  message: string;
-}
+/**
+ * Compose import speaks the shared import-issue vocabulary. The `Compose*`
+ * aliases are kept so existing call sites (the paste-box dialog, tests) don't
+ * have to change.
+ */
+export type ComposeIssueLevel = ImportIssueLevel;
+export type ComposeImportIssue = ImportIssue;
 
 export interface ComposeImportDraft {
   networks: StackNetwork[];

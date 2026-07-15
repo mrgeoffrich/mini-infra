@@ -60,6 +60,24 @@ Every service imports as **Stateful**. A StatelessWeb service needs routing, whi
 
 An imported template lands as a **draft**, so nothing is deployed until you review it and publish.
 
+## Exporting and importing templates
+
+To move a template between Mini Infra instances — or to share one — use **Export** and **Import template**.
+
+**Export** is on a template's detail page and exports the version you're currently viewing. It downloads a single YAML file describing the whole version. Two things it deliberately does *not* do:
+
+- **Secrets don't travel.** Any literal Vault value in the template (`vault.kv` fields written as a `value:`) is replaced with a redaction placeholder, and the export tells you which fields it stripped. The file is safe to commit or share, but it is **not** a full backup — you set those secrets again after importing. A field written as a `fromInput:` reference carries no secret and is exported as-is.
+- **It's always a version.** The export captures one version's contents plus the template's name, description, scope, and network type — not its whole version history.
+
+**Import template** is on the Stack Templates page. Paste or upload an exported file and Mini Infra shows you what it will do before creating anything — the same report style as the Compose importer:
+
+- The file is always imported as a **user** template (a system template exported from one instance lands as a user template you can edit).
+- If the exported scope was **any**, it's set to **Environment** and flagged, because user templates are host- or environment-scoped.
+- If the template claims a **custom NATS subject prefix**, you're warned: the subject-prefix allowlist is keyed by template ID, and the import creates a new template with a new ID, so an admin must add the new template to the allowlist before its first deploy.
+- Redacted secrets are listed so you know exactly what to set before deploying.
+
+You can **rename** on import (required if a template with that name already exists here). The result lands as a **draft** — review and publish it as usual.
+
 ## The template editor
 
 The editor has a main editing area and a **version sidebar**.

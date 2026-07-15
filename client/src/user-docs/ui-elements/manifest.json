@@ -1,5 +1,5 @@
 {
-  "generated": "2026-07-14",
+  "generated": "2026-07-15",
   "description": "UI element IDs (data-tour attributes) available for agent highlighting. Pass \"id\" to highlight_element and the route key to navigate_to. \"global\" elements are present on all pages.",
   "routes": {
     "/applications": {
@@ -452,8 +452,20 @@
       "title": "Stack Templates",
       "elements": [
         {
+          "id": "export-template-button",
+          "label": "Export Template Button",
+          "elementType": "Button",
+          "file": "client/src/app/stack-templates/[templateId]/page.tsx"
+        },
+        {
           "id": "import-compose-button",
           "label": "Import Compose Button",
+          "elementType": "Button",
+          "file": "client/src/app/stack-templates/page.tsx"
+        },
+        {
+          "id": "import-template-button",
+          "label": "Import Template Button",
           "elementType": "Button",
           "file": "client/src/app/stack-templates/page.tsx"
         }
@@ -773,6 +785,18 @@
       "label": "Compose Import Name",
       "elementType": "Input",
       "file": "client/src/components/stack-templates/import-compose-dialog.tsx"
+    },
+    {
+      "id": "import-template-input",
+      "label": "Import Template Input",
+      "elementType": "Textarea",
+      "file": "client/src/components/stack-templates/import-template-dialog.tsx"
+    },
+    {
+      "id": "import-template-name",
+      "label": "Import Template Name",
+      "elementType": "Input",
+      "file": "client/src/components/stack-templates/import-template-dialog.tsx"
     },
     {
       "id": "install-template-dialog",

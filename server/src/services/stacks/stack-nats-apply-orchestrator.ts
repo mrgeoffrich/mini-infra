@@ -17,6 +17,7 @@ import { ConflictError, InternalError, NotFoundError, ValidationError } from "..
 import {
   ErrorCode,
   JOB_HISTORY_STREAM_PREFIX,
+  DEFAULT_NATS_SUBJECT_PREFIX_TEMPLATE,
   type EnvironmentNetworkType,
   type EnvironmentType,
   type StackParameterDefinition,
@@ -517,8 +518,12 @@ function concreteName(base: string, scope: string, stackName: string, environmen
 // Phase 3 helpers — subject prefix resolution + role materialization
 // =====================================================================
 
-/** Default subject-prefix template applied when a template doesn't set one. */
-const DEFAULT_SUBJECT_PREFIX_TEMPLATE = "app.{{stack.id}}";
+/**
+ * Default subject-prefix template applied when a template doesn't set one.
+ * Aliases the shared constant so the export/import codec and this orchestrator
+ * agree on "what counts as the default".
+ */
+const DEFAULT_SUBJECT_PREFIX_TEMPLATE = DEFAULT_NATS_SUBJECT_PREFIX_TEMPLATE;
 
 /**
  * Resolve and validate the stack's NATS subject prefix.

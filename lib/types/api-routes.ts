@@ -707,6 +707,11 @@ export const ApiRoute = {
     /** GET /api/stack-templates/:templateId/versions/:versionId */
     version: (templateId: string, versionId: string): string =>
       `${ApiBase.stackTemplates}/${templateId}/versions/${versionId}`,
+    /** GET /api/stack-templates/:templateId/versions/:versionId/export — serialize a version to a portable YAML document */
+    exportVersion: (templateId: string, versionId: string): string =>
+      `${ApiBase.stackTemplates}/${templateId}/versions/${versionId}/export`,
+    /** POST /api/stack-templates/import — create a user template from an exported YAML document */
+    import: (): string => `${ApiBase.stackTemplates}/import`,
     /** POST /api/stack-templates/:templateId/rollback — re-point currentVersion to an older published version */
     rollback: (templateId: string): string =>
       `${ApiBase.stackTemplates}/${templateId}/rollback`,

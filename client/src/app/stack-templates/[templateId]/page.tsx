@@ -15,13 +15,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { IconArrowLeft, IconLoader2, IconGitCompare, IconRocket } from "@tabler/icons-react";
+import {
+  IconArrowLeft,
+  IconLoader2,
+  IconGitCompare,
+  IconRocket,
+  IconDownload,
+} from "@tabler/icons-react";
 import {
   useStackTemplate,
   useStackTemplateVersions,
   useSaveDraft,
   usePublishDraft,
   useDiscardDraft,
+  useExportTemplateVersion,
 } from "@/hooks/use-stack-templates";
 import { TemplateVersionDiff } from "@/components/stack-templates/template-version-diff";
 import { InstantiateTemplateDialog } from "@/components/stack-templates/instantiate-template-dialog";
@@ -71,6 +78,7 @@ export default function StackTemplateDetailPage() {
   const saveDraftMutation = useSaveDraft();
   const publishDraftMutation = usePublishDraft();
   const discardDraftMutation = useDiscardDraft();
+  const exportMutation = useExportTemplateVersion();
 
   // Compute display version
   const allVersions = versions ?? [];
@@ -272,6 +280,35 @@ export default function StackTemplateDetailPage() {
     }
   }
 
+  // Export the currently-displayed version to a portable YAML file. The server
+  // redacts literal secrets and reports what it removed; surface that so the
+  // operator knows the file isn't a full backup.
+  const handleExportVersion = async () => {
+    if (!templateId || !displayVersion) return;
+    try {
+      const { filename, yaml, issues } = await exportMutation.mutateAsync({
+        templateId,
+        versionId: displayVersion.id,
+      });
+      const blob = new Blob([yaml], { type: "application/yaml" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+
+      const redactions = issues.filter((i) => i.level === "lossy").length;
+      toast.success(
+        redactions > 0
+          ? `Exported ${filename} — ${redactions} secret${redactions === 1 ? "" : "s"} redacted; set them again on import`
+          : `Exported ${filename}`,
+      );
+    } catch {
+      // Global MutationCache.onError surfaces an actionable toast.
+    }
+  };
+
   // Loading state
   if (isLoading) {
     return (
@@ -396,6 +433,22 @@ export default function StackTemplateDetailPage() {
             <Button variant="outline" size="sm" onClick={() => setShowInstall(true)}>
               <IconRocket className="h-4 w-4 mr-1" />
               Install
+            </Button>
+          )}
+          {displayVersion && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleExportVersion()}
+              disabled={exportMutation.isPending}
+              data-tour="export-template-button"
+            >
+              {exportMutation.isPending ? (
+                <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <IconDownload className="h-4 w-4 mr-1" />
+              )}
+              Export
             </Button>
           )}
           {isSystem ? (

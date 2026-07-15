@@ -11,6 +11,7 @@ import type {
   StackTemplateScope,
   PrerequisiteEvaluation,
   StackInfo,
+  ImportIssue,
 } from "@mini-infra/types";
 import { apiFetch } from "@/lib/api-client";
 
@@ -142,6 +143,35 @@ async function discardDraft(templateId: string): Promise<void> {
   });
 }
 
+/** The `data` payload of the export endpoint (issues = redaction/build notices). */
+export interface TemplateVersionExport {
+  filename: string;
+  yaml: string;
+  issues: ImportIssue[];
+}
+
+async function exportTemplateVersion(args: {
+  templateId: string;
+  versionId: string;
+}): Promise<TemplateVersionExport> {
+  return apiFetch<TemplateVersionExport>(
+    ApiRoute.stackTemplates.exportVersion(args.templateId, args.versionId),
+    { correlationIdPrefix: "stack-templates" },
+  );
+}
+
+async function importTemplate(args: {
+  yaml: string;
+  name?: string;
+  displayName?: string;
+}): Promise<StackTemplateInfo> {
+  return apiFetch<StackTemplateInfo>(ApiRoute.stackTemplates.import(), {
+    method: "POST",
+    body: args,
+    correlationIdPrefix: "stack-templates",
+  });
+}
+
 async function deleteTemplate(templateId: string): Promise<void> {
   await apiFetch(ApiRoute.stackTemplates.get(templateId), {
     method: "DELETE",
@@ -228,6 +258,22 @@ export function useUpdateStackTemplate() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.stackTemplates.detail(variables.templateId),
       });
+    },
+  });
+}
+
+/** Fetch a version's portable export document (does not mutate; a "mutation" only for imperative call ergonomics). */
+export function useExportTemplateVersion() {
+  return useMutation({ mutationFn: exportTemplateVersion });
+}
+
+export function useImportTemplate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: importTemplate,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
     },
   });
 }

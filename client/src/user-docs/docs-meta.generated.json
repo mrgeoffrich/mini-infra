@@ -1,0 +1,587 @@
+{
+  "api/api-overview": {
+    "title": "API Overview",
+    "description": "An overview of how to use the Mini Infra REST API with API keys.",
+    "tags": [
+      "api",
+      "authentication",
+      "api-keys",
+      "configuration"
+    ]
+  },
+  "applications/application-management": {
+    "title": "Managing Applications",
+    "description": "How to create, deploy, configure, upgrade, stop, and remove applications in Mini Infra.",
+    "tags": [
+      "applications",
+      "deployment",
+      "docker",
+      "configuration",
+      "stacks"
+    ]
+  },
+  "applications/claude-shell": {
+    "title": "Claude Shell",
+    "description": "How to create, connect to, and authenticate a Claude Shell — a Tailscale-SSH-reachable developer container with Claude Code pre-installed.",
+    "tags": [
+      "applications",
+      "claude-shell",
+      "tailscale",
+      "ssh",
+      "claude-code",
+      "vault",
+      "egress"
+    ]
+  },
+  "applications/host-stacks": {
+    "title": "Stacks",
+    "description": "How to find, review, apply, upgrade, stop, and remove stacks — the plan/apply unit behind every application and infrastructure service in Mini Infra.",
+    "tags": [
+      "stacks",
+      "docker",
+      "infrastructure",
+      "configuration",
+      "drift"
+    ]
+  },
+  "applications/stack-templates": {
+    "title": "Stack Templates",
+    "description": "How to create, version, publish, roll back, and install reusable stack templates in Mini Infra.",
+    "tags": [
+      "stack-templates",
+      "infrastructure",
+      "docker",
+      "configuration",
+      "versioning"
+    ]
+  },
+  "connectivity/health-monitoring": {
+    "title": "Connected Services Health Monitoring",
+    "description": "How to configure and monitor external service connections in Mini Infra.",
+    "tags": [
+      "connectivity",
+      "health-checks",
+      "docker",
+      "storage",
+      "cloudflare",
+      "github",
+      "monitoring"
+    ]
+  },
+  "connectivity/troubleshooting": {
+    "title": "Connected Services Troubleshooting",
+    "description": "Common issues with external service connections and how to resolve them.",
+    "tags": [
+      "connectivity",
+      "troubleshooting",
+      "docker",
+      "azure",
+      "cloudflare",
+      "github"
+    ]
+  },
+  "containers/container-actions": {
+    "title": "Container Actions Reference",
+    "description": "Reference for all actions you can perform on Docker containers in Mini Infra.",
+    "tags": [
+      "containers",
+      "docker",
+      "configuration"
+    ]
+  },
+  "containers/container-logs": {
+    "title": "Viewing Container Logs",
+    "description": "How to view and use the container log viewer in Mini Infra.",
+    "tags": [
+      "containers",
+      "docker",
+      "monitoring"
+    ]
+  },
+  "containers/managing-containers": {
+    "title": "Managing a Container",
+    "description": "How to view details, run actions, and inspect a specific container.",
+    "tags": [
+      "containers",
+      "docker",
+      "configuration"
+    ]
+  },
+  "containers/troubleshooting": {
+    "title": "Container Troubleshooting",
+    "description": "Common container issues and how to resolve them in Mini Infra.",
+    "tags": [
+      "containers",
+      "docker",
+      "troubleshooting"
+    ]
+  },
+  "containers/viewing-containers": {
+    "title": "Viewing and Filtering Containers",
+    "description": "How to view, search, and filter Docker containers in Mini Infra.",
+    "tags": [
+      "containers",
+      "docker",
+      "monitoring"
+    ]
+  },
+  "containers/volume-management": {
+    "title": "Volume Management",
+    "description": "How to inspect, browse, and manage Docker volumes in Mini Infra.",
+    "tags": [
+      "containers",
+      "docker",
+      "volumes"
+    ]
+  },
+  "environments/environments": {
+    "title": "Managing Environments",
+    "description": "How to create and manage environments that group services and infrastructure in Mini Infra",
+    "tags": [
+      "environments",
+      "infrastructure",
+      "applications",
+      "configuration"
+    ]
+  },
+  "getting-started/concepts": {
+    "title": "Concepts and Terminology",
+    "description": "A glossary of Mini Infra concepts — what each feature is, how it works, and the terminology used throughout the application.",
+    "tags": [
+      "concepts",
+      "glossary",
+      "terminology",
+      "reference"
+    ]
+  },
+  "getting-started/navigating-the-dashboard": {
+    "title": "Navigating the Dashboard",
+    "description": "A guide to finding your way around the Mini Infra interface.",
+    "tags": [
+      "getting-started",
+      "navigation",
+      "dashboard",
+      "ui"
+    ]
+  },
+  "getting-started/overview": {
+    "title": "Getting Started with Mini Infra",
+    "description": "An introduction to Mini Infra and what you can do with it.",
+    "tags": [
+      "getting-started",
+      "dashboard",
+      "overview",
+      "docker"
+    ]
+  },
+  "getting-started/running-with-docker": {
+    "title": "Running Mini Infra with Docker",
+    "description": "How to run Mini Infra using Docker or Docker Compose.",
+    "tags": [
+      "getting-started",
+      "docker",
+      "installation",
+      "configuration"
+    ]
+  },
+  "github/github-app-setup": {
+    "title": "Setting Up the GitHub App",
+    "description": "How to connect Mini Infra to GitHub using the GitHub App integration.",
+    "tags": [
+      "github",
+      "authentication",
+      "configuration",
+      "getting-started"
+    ]
+  },
+  "github/packages-and-registries": {
+    "title": "GitHub Packages and Container Registries",
+    "description": "How to browse GitHub Container Registry packages connected through the GitHub App.",
+    "tags": [
+      "github",
+      "docker",
+      "containers",
+      "configuration"
+    ]
+  },
+  "github/repository-integration": {
+    "title": "GitHub Repository Integration",
+    "description": "How to view repositories, monitor GitHub Actions, and configure bug reporting with GitHub.",
+    "tags": [
+      "github",
+      "configuration",
+      "monitoring"
+    ]
+  },
+  "github/troubleshooting": {
+    "title": "GitHub Integration Troubleshooting",
+    "description": "Common GitHub integration issues and how to resolve them.",
+    "tags": [
+      "github",
+      "troubleshooting",
+      "authentication"
+    ]
+  },
+  "haproxy/haproxy-backends": {
+    "title": "Managing HAProxy Backends",
+    "description": "How to view and configure HAProxy backends and servers in Mini Infra",
+    "tags": [
+      "haproxy",
+      "backends",
+      "load-balancer",
+      "servers"
+    ]
+  },
+  "haproxy/haproxy-frontends": {
+    "title": "Managing HAProxy Frontends",
+    "description": "How to view, create, and configure HAProxy frontends in Mini Infra",
+    "tags": [
+      "haproxy",
+      "frontends",
+      "load-balancer",
+      "routing",
+      "ssl"
+    ]
+  },
+  "haproxy/haproxy-instances": {
+    "title": "HAProxy Instances",
+    "description": "How to monitor HAProxy health across environments and remediate or migrate instances in Mini Infra",
+    "tags": [
+      "haproxy",
+      "instances",
+      "health",
+      "remediation",
+      "migration"
+    ]
+  },
+  "haproxy/haproxy-overview": {
+    "title": "Load Balancer Overview",
+    "description": "An overview of how HAProxy load balancing works in Mini Infra",
+    "tags": [
+      "haproxy",
+      "load-balancer",
+      "networking",
+      "routing"
+    ]
+  },
+  "monitoring/container-logs": {
+    "title": "Searching Container Logs",
+    "description": "How to search, filter, and stream centralized container logs in Mini Infra.",
+    "tags": [
+      "monitoring",
+      "logs",
+      "docker",
+      "loki"
+    ]
+  },
+  "monitoring/container-metrics": {
+    "title": "Container Metrics",
+    "description": "How to monitor CPU, memory, and network usage across Docker containers in Mini Infra.",
+    "tags": [
+      "monitoring",
+      "metrics",
+      "docker",
+      "prometheus"
+    ]
+  },
+  "monitoring/events": {
+    "title": "Event Log",
+    "description": "How to view and manage the system event log in Mini Infra.",
+    "tags": [
+      "monitoring",
+      "events",
+      "deployments",
+      "backup"
+    ]
+  },
+  "nats/nats-app-integration": {
+    "title": "Connecting your app to NATS",
+    "description": "Step-by-step guide for declaring NATS roles and signers in a stack template and consuming them from your application code.",
+    "tags": [
+      "nats",
+      "messaging",
+      "applications",
+      "integration",
+      "templates"
+    ]
+  },
+  "nats/nats-cross-stack-sharing": {
+    "title": "Sharing NATS subjects across stacks",
+    "description": "Use exports and imports to publish events from one stack and consume them in another, plus the subject-prefix allowlist for human-readable namespaces.",
+    "tags": [
+      "nats",
+      "messaging",
+      "integration",
+      "templates",
+      "exports",
+      "imports"
+    ]
+  },
+  "nats/nats-overview": {
+    "title": "NATS for App Developers",
+    "description": "What the built-in NATS message bus offers app authors and how stacks plug into it.",
+    "tags": [
+      "nats",
+      "messaging",
+      "jetstream",
+      "applications",
+      "integration"
+    ]
+  },
+  "networking/dns-zones": {
+    "title": "DNS Zones",
+    "description": "How to view DNS zones and records from Cloudflare in Mini Infra",
+    "tags": [
+      "dns",
+      "cloudflare",
+      "networking",
+      "zones"
+    ]
+  },
+  "networking/tls-certificates": {
+    "title": "TLS Certificate Management",
+    "description": "How to issue, renew, and manage SSL/TLS certificates in Mini Infra.",
+    "tags": [
+      "ssl",
+      "tls",
+      "certificates",
+      "networking",
+      "storage",
+      "haproxy"
+    ]
+  },
+  "postgres-backups/backup-overview": {
+    "title": "PostgreSQL Backup Overview",
+    "description": "An overview of how PostgreSQL backup management works in Mini Infra.",
+    "tags": [
+      "postgres",
+      "backup",
+      "storage",
+      "monitoring"
+    ]
+  },
+  "postgres-backups/configuring-backups": {
+    "title": "Configuring Backup Schedules",
+    "description": "How to configure automated PostgreSQL backup schedules in Mini Infra.",
+    "tags": [
+      "postgres",
+      "backup",
+      "azure",
+      "cron",
+      "configuration"
+    ]
+  },
+  "postgres-backups/database-management": {
+    "title": "Managing PostgreSQL Databases",
+    "description": "How to add, edit, and manage PostgreSQL database connections in Mini Infra.",
+    "tags": [
+      "postgres",
+      "configuration",
+      "backup"
+    ]
+  },
+  "postgres-backups/restoring-backups": {
+    "title": "Restoring a PostgreSQL Backup",
+    "description": "How to browse backups and restore a PostgreSQL database in Mini Infra.",
+    "tags": [
+      "postgres",
+      "backup",
+      "restore",
+      "azure"
+    ]
+  },
+  "postgres-backups/troubleshooting": {
+    "title": "PostgreSQL Backup Troubleshooting",
+    "description": "Common PostgreSQL backup and restore issues and how to resolve them.",
+    "tags": [
+      "postgres",
+      "backup",
+      "restore",
+      "troubleshooting",
+      "azure"
+    ]
+  },
+  "settings/ai-assistant": {
+    "title": "AI Assistant Settings",
+    "description": "How to configure the AI assistant's API key, model, and view its capabilities in Mini Infra.",
+    "tags": [
+      "ai",
+      "configuration",
+      "anthropic",
+      "claude",
+      "settings"
+    ]
+  },
+  "settings/api-keys": {
+    "title": "Managing API Keys",
+    "description": "How to create, manage, and revoke API keys for programmatic access to Mini Infra.",
+    "tags": [
+      "api-keys",
+      "authentication",
+      "settings",
+      "security"
+    ]
+  },
+  "settings/authentication": {
+    "title": "Authentication Configuration",
+    "description": "How to configure authentication methods including Google OAuth in Mini Infra.",
+    "tags": [
+      "settings",
+      "authentication",
+      "google-oauth",
+      "administration"
+    ]
+  },
+  "settings/permission-presets": {
+    "title": "API Key Permission Presets",
+    "description": "How to create and manage reusable permission templates for API keys.",
+    "tags": [
+      "api-keys",
+      "authentication",
+      "settings",
+      "configuration"
+    ]
+  },
+  "settings/self-update": {
+    "title": "System Update",
+    "description": "How to update Mini Infra to a new version using the sidecar update mechanism",
+    "tags": [
+      "settings",
+      "update",
+      "sidecar",
+      "administration"
+    ]
+  },
+  "settings/system-diagnostics": {
+    "title": "System Diagnostics",
+    "description": "How to read server memory statistics and capture diagnostic artifacts from the System Diagnostics page in Mini Infra.",
+    "tags": [
+      "settings",
+      "diagnostics",
+      "memory",
+      "administration"
+    ]
+  },
+  "settings/system-settings": {
+    "title": "System Settings",
+    "description": "How to configure system-wide settings including Docker images, HAProxy ports, and event retention.",
+    "tags": [
+      "settings",
+      "configuration",
+      "docker",
+      "haproxy",
+      "postgres"
+    ]
+  },
+  "settings/tailscale": {
+    "title": "Tailscale",
+    "description": "How to connect Mini Infra to a Tailscale tailnet so it can mint authkeys and expose addon-attached services on your tailnet.",
+    "tags": [
+      "settings",
+      "tailscale",
+      "connectivity",
+      "oauth",
+      "acl"
+    ]
+  },
+  "settings/tls-settings": {
+    "title": "TLS Settings",
+    "description": "How to configure certificate storage, ACME provider, and renewal scheduling for TLS certificates.",
+    "tags": [
+      "settings",
+      "tls",
+      "ssl",
+      "certificates",
+      "azure",
+      "configuration"
+    ]
+  },
+  "settings/user-management": {
+    "title": "User Management",
+    "description": "How to create, delete, and manage user accounts and passwords in Mini Infra.",
+    "tags": [
+      "settings",
+      "users",
+      "authentication",
+      "administration"
+    ]
+  },
+  "settings/user-preferences": {
+    "title": "User Preferences",
+    "description": "How to configure personal settings like timezone in Mini Infra.",
+    "tags": [
+      "settings",
+      "user",
+      "timezone",
+      "preferences"
+    ]
+  },
+  "tunnels/troubleshooting": {
+    "title": "Cloudflare Tunnel Troubleshooting",
+    "description": "Common issues with Cloudflare tunnel monitoring and how to resolve them.",
+    "tags": [
+      "tunnels",
+      "cloudflare",
+      "troubleshooting"
+    ]
+  },
+  "tunnels/tunnel-monitoring": {
+    "title": "Monitoring Cloudflare Tunnels",
+    "description": "How to monitor Cloudflare tunnel health and manage hostnames in Mini Infra.",
+    "tags": [
+      "tunnels",
+      "cloudflare",
+      "monitoring",
+      "dns"
+    ]
+  },
+  "vault/vault-app-integration": {
+    "title": "Using Vault from your app",
+    "description": "How to declare Vault policies and AppRoles in a stack template, get credentials injected at deploy time, and read secrets from your application code.",
+    "tags": [
+      "vault",
+      "secrets",
+      "openbao",
+      "approle",
+      "applications",
+      "integration",
+      "templates"
+    ]
+  },
+  "vault/vault-approles": {
+    "title": "Managing Vault AppRoles",
+    "description": "How to create, apply, and manage Vault AppRole credentials for applications in Mini Infra.",
+    "tags": [
+      "vault",
+      "secrets",
+      "openbao",
+      "approle",
+      "authentication",
+      "administration",
+      "security"
+    ]
+  },
+  "vault/vault-overview": {
+    "title": "Vault Overview",
+    "description": "An overview of the managed OpenBao secrets vault in Mini Infra — bootstrap, seal state, and operator credentials.",
+    "tags": [
+      "vault",
+      "secrets",
+      "openbao",
+      "administration",
+      "security"
+    ]
+  },
+  "vault/vault-policies": {
+    "title": "Managing Vault Policies",
+    "description": "How to create, edit, publish, and delete HCL policy documents for the managed Vault in Mini Infra.",
+    "tags": [
+      "vault",
+      "secrets",
+      "openbao",
+      "policies",
+      "administration",
+      "security"
+    ]
+  }
+}

@@ -1,89 +1,136 @@
-import { Suspense } from "react";
+import { lazy } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PublicRoute } from "@/components/public-route";
 import { AuthErrorBoundary } from "@/components/auth-error-boundary";
 import { AppLayout } from "@/components/app-layout";
+
+// Auth/entry pages stay eager: they're small and on the first-paint path for a
+// logged-out user, where an extra chunk round-trip (and a spinner) is exactly
+// what you don't want. Everything behind AppLayout is lazy — see below.
 import { LoginPage } from "@/app/login/page";
 import { SetupPage } from "@/app/setup/page";
 import { PasswordRecoveryPage } from "@/app/recover/page";
 import { ForcePasswordChangePage } from "@/app/change-password/page";
-import { DashboardPage } from "@/app/dashboard/page";
-import { ContainersPage } from "@/app/containers/page";
-import ContainerDetailPage from "@/app/containers/[id]/page";
-import { VolumeInspectPage } from "@/app/containers/volumes/VolumeInspectPage";
-import { VolumeFileContentPage } from "@/app/containers/volumes/VolumeFileContentPage";
-import DockerSettingsPage from "@/app/connectivity/docker/page";
-import CloudflareSettingsPage from "@/app/connectivity/cloudflare/page";
-import StorageSettingsPage from "@/app/connectivity-storage/page";
-import GitHubConnectivityPage from "@/app/connectivity/github/page";
-import TailscaleSettingsPage from "@/app/connectivity/tailscale/page";
-import SystemSettingsPage from "@/app/settings/system/page";
-import NetworkAccessPage from "@/app/network-access/page";
-import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
-import SelfBackupSettingsPage from "@/app/settings/self-backup/page";
-import GitHubSettingsPage from "@/app/settings/github/page";
-import PostgresBackups from "@/app/postgres/page";
-import PostgresRestorePage from "@/app/postgres/restore/page";
-import PostgresServerPage from "@/app/postgres-server/page";
-import PostgresServerDetailPage from "@/app/postgres-server/[serverId]/page";
-import DatabaseDetailPage from "@/app/postgres-server/[serverId]/databases/[dbId]/page";
-import { TunnelsPage } from "@/app/tunnels/page";
-import { UserSettingsPage } from "@/app/user/settings/page";
-import ApplicationsPage from "@/app/applications/page";
-import NewApplicationPage from "@/app/applications/new/page";
-import NewClaudeShellPage from "@/app/applications/new/claude-shell/page";
-import ApplicationDetailLayout from "@/app/applications/[id]/layout";
-import ApplicationDetailIndex from "@/app/applications/[id]/page";
-import ApplicationOverviewTab from "@/app/applications/[id]/overview/page";
-import ApplicationServicesTab from "@/app/applications/[id]/services/page";
-import ApplicationConfigurationTab from "@/app/applications/[id]/configuration/page";
-import ApplicationActivityTab from "@/app/applications/[id]/activity/page";
-import AdoptContainerPage from "@/app/applications/adopt/page";
-import { ApiKeysPage } from "@/app/api-keys/page";
-import { CreateApiKeyPage } from "@/app/api-keys/new/page";
-import { PermissionPresetsPage } from "@/app/api-keys/presets/page";
-import { EventsPage } from "@/app/events/page";
-import EventDetailPage from "@/app/events/[id]/page";
-import { EnvironmentsPage } from "@/app/environments/page";
-import { EnvironmentDetailPage } from "@/app/environments/[id]/page";
-import CertificatesPage from "@/app/certificates/page";
-import CertificateDetailsPage from "@/app/certificates/[id]/page";
-import DnsPage from "@/app/dns/page";
-import TlsSettingsPage from "@/app/settings/tls/page";
-import AiAssistantSettingsPage from "@/app/settings/ai-assistant/page";
-import EgressFwAgentSettingsPage from "@/app/settings/egress-fw-agent/page";
-import EgressPage from "@/app/egress/page";
-import EgressPolicyDetailPage from "@/app/egress/[policyId]/page";
-import { IconShowcasePage } from "@/app/design/icons/page";
-import FrontendsListPage from "@/app/haproxy/frontends/page";
-import FrontendDetailsPage from "@/app/haproxy/frontends/[frontendName]/page";
-import CreateManualFrontendPage from "@/app/haproxy/frontends/new/manual/page";
-import EditManualFrontendPage from "@/app/haproxy/frontends/[frontendName]/edit/page";
-import BackendsListPage from "@/app/haproxy/backends/page";
-import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
-import HAProxyInstancesPage from "@/app/haproxy/instances/page";
-import HAProxyOverviewPage from "@/app/haproxy/page";
-import SelfUpdateSettingsPage from "@/app/settings/self-update/page";
-import SystemDiagnosticsPage from "@/app/system-diagnostics/page";
-import { MonitoringPage } from "@/app/monitoring/page";
+// Eager: takes a `fullscreen` prop and is also mounted outside AppLayout
+// (`/logs/fullscreen`), so it's simplest kept out of the lazy prop-less helper.
 import { LogsPage } from "@/app/logs/page";
-import StackTemplatesPage from "@/app/stack-templates/page";
-import StackTemplateDetailPage from "@/app/stack-templates/[templateId]/page";
-import StacksPage from "@/app/stacks/page";
-import StackDetailPage from "@/app/stacks/[stackId]/page";
-import UserManagementPage from "@/app/settings/users/page";
-import AuthenticationSettingsPage from "@/app/settings/authentication/page";
-import VaultPage from "@/app/vault/page";
-import VaultPoliciesPage from "@/app/vault/policies/page";
-import VaultPolicyDetailPage from "@/app/vault/policies/[id]/page";
-import VaultAppRolesPage from "@/app/vault/approles/page";
-import VaultAppRoleDetailPage from "@/app/vault/approles/[id]/page";
-import NatsPage from "@/app/nats/page";
-import NatsAccountsPage from "@/app/nats/accounts/page";
-import NatsCredentialsPage from "@/app/nats/credentials/page";
-import NatsStreamsPage from "@/app/nats/streams/page";
-import NatsConsumersPage from "@/app/nats/consumers/page";
+
+/**
+ * Route-level code splitting (P6 roadmap 5.4). Every page behind the
+ * authenticated AppLayout is a `React.lazy` chunk, so the initial bundle no
+ * longer carries all ~75 pages (and their heavy, page-specific deps — the
+ * CodeMirror template editor, recharts, and so on) up front. A single
+ * `<Suspense>` boundary around the layout's `<Outlet>` (see app-layout.tsx)
+ * catches the load; the fullscreen-logs route, which lives outside the layout,
+ * gets its own boundary.
+ *
+ * `named()` adapts our many named-export pages to what `React.lazy` wants
+ * (`{ default }`); default-export pages use `lazy(() => import(...))` directly.
+ */
+function named<M extends Record<string, unknown>, K extends keyof M>(
+  loader: () => Promise<M>,
+  key: K,
+) {
+  return lazy(() => loader().then((m) => ({ default: m[key] as React.ComponentType })));
+}
+
+// ─── Lazy pages (all behind AppLayout) ──────────────────────────────────────
+const DashboardPage = named(() => import("@/app/dashboard/page"), "DashboardPage");
+const ContainersPage = named(() => import("@/app/containers/page"), "ContainersPage");
+const ContainerDetailPage = lazy(() => import("@/app/containers/[id]/page"));
+const VolumeInspectPage = named(
+  () => import("@/app/containers/volumes/VolumeInspectPage"),
+  "VolumeInspectPage",
+);
+const VolumeFileContentPage = named(
+  () => import("@/app/containers/volumes/VolumeFileContentPage"),
+  "VolumeFileContentPage",
+);
+const DockerSettingsPage = lazy(() => import("@/app/connectivity/docker/page"));
+const CloudflareSettingsPage = lazy(() => import("@/app/connectivity/cloudflare/page"));
+const StorageSettingsPage = lazy(() => import("@/app/connectivity-storage/page"));
+const GitHubConnectivityPage = lazy(() => import("@/app/connectivity/github/page"));
+const TailscaleSettingsPage = lazy(() => import("@/app/connectivity/tailscale/page"));
+const SystemSettingsPage = lazy(() => import("@/app/settings/system/page"));
+const NetworkAccessPage = lazy(() => import("@/app/network-access/page"));
+const RegistryCredentialsPage = lazy(() => import("@/app/settings/registry-credentials/page"));
+const SelfBackupSettingsPage = lazy(() => import("@/app/settings/self-backup/page"));
+const GitHubSettingsPage = lazy(() => import("@/app/settings/github/page"));
+const PostgresBackups = lazy(() => import("@/app/postgres/page"));
+const PostgresRestorePage = lazy(() => import("@/app/postgres/restore/page"));
+const PostgresServerPage = lazy(() => import("@/app/postgres-server/page"));
+const PostgresServerDetailPage = lazy(() => import("@/app/postgres-server/[serverId]/page"));
+const DatabaseDetailPage = lazy(
+  () => import("@/app/postgres-server/[serverId]/databases/[dbId]/page"),
+);
+const TunnelsPage = named(() => import("@/app/tunnels/page"), "TunnelsPage");
+const UserSettingsPage = named(() => import("@/app/user/settings/page"), "UserSettingsPage");
+const ApplicationsPage = lazy(() => import("@/app/applications/page"));
+const NewApplicationPage = lazy(() => import("@/app/applications/new/page"));
+const NewClaudeShellPage = lazy(() => import("@/app/applications/new/claude-shell/page"));
+const ApplicationDetailLayout = lazy(() => import("@/app/applications/[id]/layout"));
+const ApplicationDetailIndex = lazy(() => import("@/app/applications/[id]/page"));
+const ApplicationOverviewTab = lazy(() => import("@/app/applications/[id]/overview/page"));
+const ApplicationServicesTab = lazy(() => import("@/app/applications/[id]/services/page"));
+const ApplicationConfigurationTab = lazy(
+  () => import("@/app/applications/[id]/configuration/page"),
+);
+const ApplicationActivityTab = lazy(() => import("@/app/applications/[id]/activity/page"));
+const AdoptContainerPage = lazy(() => import("@/app/applications/adopt/page"));
+const ApiKeysPage = named(() => import("@/app/api-keys/page"), "ApiKeysPage");
+const CreateApiKeyPage = named(() => import("@/app/api-keys/new/page"), "CreateApiKeyPage");
+const PermissionPresetsPage = named(
+  () => import("@/app/api-keys/presets/page"),
+  "PermissionPresetsPage",
+);
+const EventsPage = named(() => import("@/app/events/page"), "EventsPage");
+const EventDetailPage = lazy(() => import("@/app/events/[id]/page"));
+const EnvironmentsPage = named(() => import("@/app/environments/page"), "EnvironmentsPage");
+const EnvironmentDetailPage = named(
+  () => import("@/app/environments/[id]/page"),
+  "EnvironmentDetailPage",
+);
+const CertificatesPage = lazy(() => import("@/app/certificates/page"));
+const CertificateDetailsPage = lazy(() => import("@/app/certificates/[id]/page"));
+const DnsPage = lazy(() => import("@/app/dns/page"));
+const TlsSettingsPage = lazy(() => import("@/app/settings/tls/page"));
+const AiAssistantSettingsPage = lazy(() => import("@/app/settings/ai-assistant/page"));
+const EgressFwAgentSettingsPage = lazy(() => import("@/app/settings/egress-fw-agent/page"));
+const EgressPage = lazy(() => import("@/app/egress/page"));
+const EgressPolicyDetailPage = lazy(() => import("@/app/egress/[policyId]/page"));
+const IconShowcasePage = named(() => import("@/app/design/icons/page"), "IconShowcasePage");
+const FrontendsListPage = lazy(() => import("@/app/haproxy/frontends/page"));
+const FrontendDetailsPage = lazy(() => import("@/app/haproxy/frontends/[frontendName]/page"));
+const CreateManualFrontendPage = lazy(() => import("@/app/haproxy/frontends/new/manual/page"));
+const EditManualFrontendPage = lazy(
+  () => import("@/app/haproxy/frontends/[frontendName]/edit/page"),
+);
+const BackendsListPage = lazy(() => import("@/app/haproxy/backends/page"));
+const BackendDetailsPage = lazy(() => import("@/app/haproxy/backends/[backendName]/page"));
+const HAProxyInstancesPage = lazy(() => import("@/app/haproxy/instances/page"));
+const HAProxyOverviewPage = lazy(() => import("@/app/haproxy/page"));
+const SelfUpdateSettingsPage = lazy(() => import("@/app/settings/self-update/page"));
+const SystemDiagnosticsPage = lazy(() => import("@/app/system-diagnostics/page"));
+const MonitoringPage = named(() => import("@/app/monitoring/page"), "MonitoringPage");
+const StackTemplatesPage = lazy(() => import("@/app/stack-templates/page"));
+const StackTemplateDetailPage = lazy(() => import("@/app/stack-templates/[templateId]/page"));
+const StacksPage = lazy(() => import("@/app/stacks/page"));
+const StackDetailPage = lazy(() => import("@/app/stacks/[stackId]/page"));
+const UserManagementPage = lazy(() => import("@/app/settings/users/page"));
+const AuthenticationSettingsPage = lazy(() => import("@/app/settings/authentication/page"));
+const VaultPage = lazy(() => import("@/app/vault/page"));
+const VaultPoliciesPage = lazy(() => import("@/app/vault/policies/page"));
+const VaultPolicyDetailPage = lazy(() => import("@/app/vault/policies/[id]/page"));
+const VaultAppRolesPage = lazy(() => import("@/app/vault/approles/page"));
+const VaultAppRoleDetailPage = lazy(() => import("@/app/vault/approles/[id]/page"));
+const NatsPage = lazy(() => import("@/app/nats/page"));
+const NatsAccountsPage = lazy(() => import("@/app/nats/accounts/page"));
+const NatsCredentialsPage = lazy(() => import("@/app/nats/credentials/page"));
+const NatsStreamsPage = lazy(() => import("@/app/nats/streams/page"));
+const NatsConsumersPage = lazy(() => import("@/app/nats/consumers/page"));
+const HelpPage = lazy(() => import("@/app/help/page"));
+const HelpDocPage = lazy(() => import("@/app/help/[category]/[slug]/page"));
 
 export const router = createBrowserRouter([
   {
@@ -445,34 +492,14 @@ export const router = createBrowserRouter([
       },
       {
         path: "help",
-        lazy: async () => {
-          const { default: HelpPage } = await import("@/app/help/page");
-          return {
-            element: (
-              <Suspense>
-                <HelpPage />
-              </Suspense>
-            ),
-          };
-        },
+        element: <HelpPage />,
       },
       {
         path: "help/:category/:slug",
-        lazy: async () => {
-          const { default: HelpDocPage } = await import(
-            "@/app/help/[category]/[slug]/page"
-          );
-          return {
-            element: (
-              <Suspense>
-                <HelpDocPage />
-              </Suspense>
-            ),
-          };
-        },
+        element: <HelpDocPage />,
       },
       // Development-only routes
-      ...(import.meta.env.VITE_SHOW_DEV_MENU === 'true'
+      ...(import.meta.env.VITE_SHOW_DEV_MENU === "true"
         ? [
             {
               path: "design/icons",
