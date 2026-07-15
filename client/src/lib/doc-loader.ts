@@ -19,9 +19,8 @@ export interface DocFrontmatter {
 }
 
 /**
- * Article metadata. `content` (the markdown body) is loaded lazily and is
- * therefore optional — the eager registry leaves it unset; the help page and
- * search index fill it on demand (see `loadDocContent` / `loadAllDocContent`).
+ * Article metadata. The markdown body is NOT here — it's loaded lazily on demand
+ * (see `loadDocContent`) so the ~436 KB of bodies stay out of the initial bundle.
  */
 export interface DocEntry {
   slug: string;
@@ -30,8 +29,6 @@ export interface DocEntry {
   href: string;
   /** Topics this article covers — from docs-structure.yaml */
   topics: string[];
-  /** Markdown body, present only once lazily loaded. */
-  content?: string;
 }
 
 export interface ArticleDef {
@@ -155,18 +152,6 @@ export async function loadDocContent(
   const loader = loaderByKey.get(`${category}/${slug}`);
   if (!loader) return null;
   return stripFrontMatter(await loader());
-}
-
-/** Load every article body and pair it with its metadata — used to build the search index. */
-export async function loadAllDocContent(): Promise<DocEntry[]> {
-  return Promise.all(
-    docRegistry.map(async (entry) => ({
-      ...entry,
-      content: stripFrontMatter(
-        (await loaderByKey.get(`${entry.category}/${entry.slug}`)?.()) ?? ""
-      ),
-    })),
-  );
 }
 
 export interface DocCategory {
